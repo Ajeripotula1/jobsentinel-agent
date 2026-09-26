@@ -1,4 +1,4 @@
-import { JobsTable } from "@/components/JobsTable"
+import { JobsTable } from "@/components/jobs/JobsTable"
 import { Alert, AlertTitle, AlertAction } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { useProfile } from "@/hooks/useProfile"
@@ -29,7 +29,7 @@ export function JobListPage() {
         <Alert>
           <AlertTitle>Sign in to score jobs against your resume</AlertTitle>
           <AlertAction>
-            <Button size="sm" render={<Link to="/sign-in" />}>Sign In</Button>
+            <Button size="xs" render={<Link to="/sign-in" />}>Sign In</Button>
           </AlertAction>
         </Alert>
       )}
@@ -43,7 +43,7 @@ export function JobListPage() {
         <Alert>
           <AlertTitle>Upload your resume to score jobs</AlertTitle>
           <AlertAction>
-            <Button size="sm" render={<Link to="/profile" />}>Upload resume</Button>
+            <Button size="xs" render={<Link to="/profile" />}>Upload resume</Button>
           </AlertAction>
         </Alert>
       )}

@@ -70,8 +70,19 @@ export const useUploadProfile = () => {
         // into the `profile` query's cache instead of just invalidating
         // and letting useProfile refetch: same end result, one fewer
         // round trip to the API.
+        //
+        // We also invalidate every job's cached Score Fit result and Job
+        // Agent conversation. Both are scoped server-side to "your latest
+        // profile" (the client never sends a profile_id), so a new upload
+        // makes the old ones stale: a job scored against the previous resume
+        // must read as "not scored yet" again. Passing just the key prefix
+        // ['score'] / ['agent'] matches every job's entry at once (see
+        // queryKeys.js), and the refetch re-asks the API, which now resolves
+        // the new profile.
         onSuccess: (profile) => {
             queryClient.setQueryData(queryKeys.profile, profile)
+            queryClient.invalidateQueries({ queryKey: ['score'] })
+            queryClient.invalidateQueries({ queryKey: ['agent'] })
         },
     })
 }

@@ -7,7 +7,7 @@ export function AppLayout() {
   return (
     <>
       <header className="sticky top-0 z-10 border-b bg-background">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
+        <div className="mx-auto flex h-14 max-w-[96rem] items-center gap-6 px-4 sm:px-6">
           <Link to="/" className="font-semibold">
             JobSentinel
           </Link>
@@ -45,7 +45,7 @@ export function AppLayout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="mx-auto max-w-[96rem] px-4 py-6 sm:px-6">
         <Outlet />
       </main>
     </>
