@@ -6,8 +6,6 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import ErrorAlert from '@/components/ErrorAlert'
 import { FitAssessmentView } from './FitAssessmentView'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
-import { SCROLL_CARD, SCROLL_CARD_CONTENT } from '@/lib/layout'
 
 // "Render by precedence" = an if / else-if chain where ORDER MATTERS: the
 // panel is always in exactly one state, and the first condition that's true
@@ -103,17 +101,13 @@ const ScoreFitBody = ({ jobId }) => {
     )
 }
 
-export const ScoreFitPanel = ({ jobId }) => {
-    return(
-        <Card className={SCROLL_CARD}>
-            <CardHeader>
-                <CardTitle>AI Job Fit Score</CardTitle>
-                <CardDescription>How your resume lines up with this posting</CardDescription>
-            </CardHeader>
-            <CardContent className={SCROLL_CARD_CONTENT}>
-                <ScoreFitBody jobId= {jobId}/>
-            </CardContent>
-        </Card>
-    )
-}
-
+// No Card of its own any more: it renders inside a TabsContent, and the
+// surrounding Card + tab list (JobDetail.jsx) provide the frame and the
+// scrolling. The tab label already names the panel, so a title here would
+// be repeated; a one-line description is enough.
+export const ScoreFitPanel = ({ jobId }) => (
+    <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">How your resume lines up with this posting.</p>
+        <ScoreFitBody jobId={jobId} />
+    </div>
+)

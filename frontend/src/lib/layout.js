@@ -25,3 +25,29 @@ export const SCROLL_CARD = 'lg:max-h-full lg:self-start'
 // - overflow-y-auto: whatever doesn't fit scrolls, scrollbar only if needed.
 // - overscroll-contain: reaching the end doesn't chain the scroll outward.
 export const SCROLL_CARD_CONTENT = 'lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain'
+
+// ---- Tabbed card (Job Detail's right column: Fit score | Job Agent) ----
+// Same idea as above, one level deeper. The height has to be passed down
+// through EVERY layer, or scrolling silently stops working:
+//   grid cell -> Card -> Tabs -> TabsContent (the thing that scrolls)
+// Each layer is a flex column that takes the leftover height (flex-1) and
+// is allowed to be shorter than its content (min-h-0).
+
+// On the Card. h-full (not max-h-full like SCROLL_CARD): a fixed-size box,
+// so switching tabs never resizes it, and the chat later gets the full
+// column height to lay out its message list + input.
+export const TABS_CARD = 'lg:h-full'
+
+// On <Tabs> (already `flex flex-col` in the horizontal orientation).
+export const TABS_ROOT = 'gap-4 lg:min-h-0 lg:flex-1'
+
+// On <TabsList>: inset by the Card's own padding variable so the tab chooser
+// sits in the top-left corner, lined up with the content below it.
+export const TABS_LIST = 'mx-(--card-spacing)'
+
+// On each <TabsContent> (already `flex-1`) - this is the element that
+// scrolls, so the tab list above it stays pinned. With keepMounted, Base UI
+// hides inactive panels with the `hidden` attribute (Tailwind's preflight
+// makes that `display: none !important`), and each panel keeps its own
+// scroll position while hidden.
+export const TABS_PANEL = 'px-(--card-spacing) lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain'

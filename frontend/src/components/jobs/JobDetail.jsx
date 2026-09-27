@@ -9,7 +9,9 @@ import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { ScoreFitPanel } from './ScoreFitPanel'
 import ErrorAlert from '@/components/ErrorAlert'
 import ReactMarkdown from 'react-markdown'
-import { SCROLL_CARD, SCROLL_CARD_CONTENT } from '@/lib/layout'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SCROLL_CARD, SCROLL_CARD_CONTENT, TABS_CARD, TABS_LIST, TABS_PANEL, TABS_ROOT } from '@/lib/layout'
+import { JobAgentChat } from './JobAgentChat'
 
 export const JobDetail = ({ jobId }) => {
     const { data: job, isPending, isError, error } = useJob(jobId)
@@ -119,7 +121,28 @@ export const JobDetail = ({ jobId }) => {
                     </CardContent>
                 </Card>
                 <aside className='order-first lg:order-0 lg:min-h-0'>
-                    <ScoreFitPanel jobId={jobId} />
+                    {/* The Card is the frame; Tabs fill it. The tab list is
+                        pinned at the top, and each TabsContent scrolls on its
+                        own (see TABS_* in lib/layout.js for the height chain).
+                        keepMounted: switching tabs hides a panel instead of
+                        unmounting it. That keeps an in-flight Score Fit run's
+                        isPending state (otherwise you'd come back to an idle
+                        "Score fit" button mid-run and could start a second
+                        paid run), and each tab's scroll position. */}
+                    <Card className={TABS_CARD}>
+                        <Tabs defaultValue="score-fit" className={TABS_ROOT}>
+                            <TabsList className={TABS_LIST}>
+                                <TabsTrigger value="score-fit">AI Score</TabsTrigger>
+                                <TabsTrigger value="agent">Chat with Agent</TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="score-fit" keepMounted className={TABS_PANEL}>
+                                <ScoreFitPanel jobId={jobId} />
+                            </TabsContent>
+                            <TabsContent value="agent" keepMounted className={TABS_PANEL}>
+                                <JobAgentChat jobId={jobId}/>
+                            </TabsContent>
+                        </Tabs>
+                    </Card>
                 </aside>
             </div>
         </div>
