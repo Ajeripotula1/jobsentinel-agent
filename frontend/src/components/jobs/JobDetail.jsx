@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '@clerk/clerk-react'
 import { useJob } from '@/hooks/useJobs'
+import { useScoreFit } from '@/hooks/useScoreFit'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { formatDate } from '@/lib/format'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { ScoreFitPanel } from './ScoreFitPanel'
@@ -15,6 +18,24 @@ import { JobAgentChat } from './JobAgentChat'
 
 export const JobDetail = ({ jobId }) => {
     const { data: job, isPending, isError, error } = useJob(jobId)
+    const { isSignedIn } = useAuth()
+    // Same query key as ScoreFitPanel's own useScoreFit call, so React Query
+    // dedupes them into one request - this is just a second reader of the
+    // same cache entry. `enabled: isSignedIn`: signed out it would only 401.
+    const score = useScoreFit(jobId, { enabled: isSignedIn })
+    // Chat is gated on a stored score existing (Decision 5), never on
+    // sending a message and parsing the backend's gate text. score.data is
+    // undefined while loading and null for "never scored", so != null
+    // covers both. isSignedIn is redundant today (the tabs only render
+    // signed in) but keeps canChat honest if that ever changes.
+    const canChat = isSignedIn && score.data != null
+    // The tab the user *picked*. The tab actually *shown* is derived below.
+    const [tab, setTab] = useState('score-fit')
+    // Derive, don't sync: if canChat flips to false while you're on the chat
+    // tab (e.g. a resume upload invalidates the score), this falls back to
+    // the fit tab on the same render - no useEffect watching canChat and
+    // calling setTab, which would render the wrong tab once first.
+    const activeTab = canChat ? tab : 'score-fit'
 
     if (isPending) {
         // Shaped like the real content below (back link / title / badges /
@@ -129,20 +150,54 @@ export const JobDetail = ({ jobId }) => {
                         isPending state (otherwise you'd come back to an idle
                         "Score fit" button mid-run and could start a second
                         paid run), and each tab's scroll position. */}
+                    {!isSignedIn ? (
+                        // Decision 10: blocked inline, not by a route redirect -
+                        // the posting stays readable signed out. redirect_url
+                        // brings the user back to this job after signing in.
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>See how you fit</CardTitle>
+                                <CardDescription>
+                                    Sign in to score this job against your resume and work with the Job Agent on a
+                                    tailored resume and cover letter.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Link
+                                    to={`/sign-in?redirect_url=${encodeURIComponent(window.location.href)}`}
+                                    className={buttonVariants({ className: 'w-full' })}
+                                >
+                                    Sign in
+                                </Link>
+                            </CardContent>
+                        </Card>
+                    ) : (
                     <Card className={TABS_CARD}>
-                        <Tabs defaultValue="score-fit" className={TABS_ROOT}>
+                        {/* Controlled: value is the derived activeTab, not `tab`. */}
+                        <Tabs value={activeTab} onValueChange={setTab} className={TABS_ROOT}>
                             <TabsList className={TABS_LIST}>
-                                <TabsTrigger value="score-fit">AI Score</TabsTrigger>
-                                <TabsTrigger value="agent">Chat with Agent</TabsTrigger>
+                                <TabsTrigger value="score-fit">Fit score</TabsTrigger>
+                                {/* A disabled trigger gets pointer-events-none, so a
+                                    hover `title` would never show - the "score this
+                                    job first" hint lives in ScoreFitPanel instead,
+                                    where it's visible on touch screens too. */}
+                                <TabsTrigger value="agent" disabled={!canChat}>
+                                    Job Agent
+                                </TabsTrigger>
                             </TabsList>
                             <TabsContent value="score-fit" keepMounted className={TABS_PANEL}>
                                 <ScoreFitPanel jobId={jobId} />
                             </TabsContent>
                             <TabsContent value="agent" keepMounted className={TABS_PANEL}>
-                                <JobAgentChat jobId={jobId}/>
+                                {/* Only mounted once chat is allowed, so no history
+                                    GET fires for an unscored job. After that,
+                                    keepMounted keeps it (and an unsent draft) alive
+                                    across tab switches. */}
+                                {canChat && <JobAgentChat jobId={jobId} />}
                             </TabsContent>
                         </Tabs>
                     </Card>
+                    )}
                 </aside>
             </div>
         </div>

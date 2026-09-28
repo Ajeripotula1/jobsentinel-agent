@@ -29,13 +29,15 @@ This still means clean architecture and no unnecessary rework — see the hard a
 
 ## Scope decisions (locked in for MVP)
 
-- **Single-user.** No real multi-tenant auth yet. Clerk is a late slice.
+*Several of these were MVP-only and are lifted by later stages; each is marked where that happens.*
+
+- **Single-user.** No real multi-tenant auth yet. Clerk is a late slice. *(Superseded: Clerk arrived in Slice 6.5; per-user follows arrive in Stage 3.)*
 - **Resume input is a PDF upload** (`POST /profile/upload`, Slice 2) — PDF text is extracted server-side via `pypdf` and fed into the extraction utility. No OCR/scanned-image support - a PDF with no text layer is a clear 422, not a silent empty extraction. (A raw-text `POST /profile` existed briefly alongside it; removed once PDF upload covered real usage and the raw-text HTTP route had no user-facing purpose left. `extract_profile()` itself still takes plain text directly - that's what `tests/test_extract_profile.py` calls.)
-- **Company following is hardcoded board token(s) for early slices.** Real follow/unfollow CRUD arrives once the core agent loop is validated (Slice 7).
-- **Greenhouse only for real ingestion in early slices.** Ashby/Lever exploration is already done (Slice 0); ingestion pollers for them are a later addition, not MVP.
+- **Company following is hardcoded board token(s) for early slices.** Real follow/unfollow CRUD arrives once the core agent loop is validated (Slice 7). *(Lifted in Stage 2 (seeded companies) and Stage 3 (follow/unfollow).)*
+- **Greenhouse only for real ingestion in early slices.** Ashby/Lever exploration is already done (Slice 0); ingestion pollers for them are a later addition, not MVP. *(Lifted in Stage 2, Slice 8.)*
 - **Resume/profile extraction is a plain single LLM call, not agentic** — see classification table above.
 - **Company research (web search tool) is deferred until after fit-scoring is validated** (Slice 6, not Slice 3) — avoids picking a search API/dealing with its cost and latency before the core loop is proven. It is also never its own user-facing step (see the Job Agent decision below) — purely a background grounding tool for the Score Fit Agent and the Job Agent.
-- **Embeddings/pgvector fit-matching is deferred to a stretch slice** (Slice 8). Naive DB lookups (fetch-by-ID, simple filters) are enough while the agent loop itself is being validated — there's no multi-job search need until Slice 7's job feed exists.
+- **Embeddings/pgvector fit-matching is deferred to a stretch slice** (now Stage 7, Stretch). Naive DB lookups (fetch-by-ID, simple filters) are enough while the agent loop itself is being validated — there's no multi-job search need until Slice 7's job feed exists.
 - **Minimal real Postgres tables from Slice 1 onward**, not flat-file fixtures — local Postgres is already running (Slice 0). Each slice adds only the columns it needs, not the full schema up front.
 - **Resume tailoring, cover letter drafting, and fit Q&A are ONE agent (the "Job Agent"), not three separate agents, and not a master-orchestrator-plus-sub-agents split.** Decided via brainstorming before Slice 5 started. Reasoning: all three share the same job, the same profile, and the same grounding rules, and happen sequentially within one conversation, not in parallel — splitting them into separate agents (or a master agent delegating to sub-agents) would just mean manually relaying context between them that one shared session gives you for free, and none of the three need a distinct persona or isolated scratch-space that would justify the added complexity. The one exception: if Company Research (Slice 6) grows into genuinely multi-step exploration, that specific capability is a reasonable candidate to become a nested agent-as-tool later (an `Agent` call wrapped in a plain `@tool` function — Strands has no dedicated class for this) so its internal search/synthesis mess stays out of the main conversation. Not needed for MVP.
 - **The Job Agent is gated behind a successful Score Fit run for that job.** You invest in tailoring only after deciding, via Score Fit, that the job is worth pursuing. Its opening message references the stored score/gaps rather than starting cold (requires a real, queryable "has Score Fit run for job X" record — see Slice 5's gating-requirement bullet, not yet built).
@@ -45,9 +47,31 @@ This still means clean architecture and no unnecessary rework — see the hard a
 
 After Slice 5 (AgentCore Memory short-term tier), the project paused to scope down: the original Slices 6-9 below described web search, a productionized poller, companies CRUD, embeddings, auth, and AWS deployment as one long forward march, with no clear line around what's actually needed for a working local MVP. The goal from here is a backend that runs locally today, so a frontend can be built against it tomorrow, with deployment or stretch features after that.
 
-Old Slices 6-9's forward-looking content is replaced below by a new Slice 6 (the actual scope of this session — closing the two real gaps in the existing API surface, nothing more) and a "Deferred / Post-MVP" section. Nothing is dropped, only resequenced — see that section for exactly what's pushed out and why, per this file's own rule not to let scope drift silently.
+Old Slices 6-9's forward-looking content is replaced below by a new Slice 6 (the actual scope of this session — closing the two real gaps in the existing API surface, nothing more) and a "Deferred / Post-MVP" section. Nothing is dropped, only resequenced — see that section for exactly what's pushed out and why, per this file's own rule not to let scope drift silently. *(2026-09-27: that Deferred section has since been replaced by Stages 2–7 at the end of this file. Every item it held now lives in a numbered slice or in the Stage 7 backlog.)*
+
+## Roadmap at a glance (updated 2026-09-27)
+
+The slices below are grouped into **stages**. Each stage ends at a product milestone you could demo on its own. Slices inside a stage still follow the vertical-slice rule: each one is runnable end to end before the next starts.
+
+| Stage | Milestone ("done" means…) | Slices | Status |
+|---|---|---|---|
+| **1. MVP** | One user can upload a resume, browse jobs, score fit, and work with the Job Agent in a real browser, locally | 0–7 | ✅ Built. Only Slice 7's real-browser walkthrough remains |
+| **2. Multi-company** | Jobs from many companies across Greenhouse, Ashby and Lever, loaded through shared ingestion code in the package (not `scripts/`) | 8 | ⬜ Next |
+| **3. Personalized feed** | Users follow companies, set target roles/location, and see a focused feed of only their jobs | 9 | ⬜ |
+| **4. Polling** | Boards refresh on a schedule on their own; new and closed postings are detected and surfaced | 10 | ⬜ |
+| **5. Custom companies** | Users can follow a company outside the seed list; its board token is resolved automatically | 11 | ⬜ |
+| **6. Ready for deployment → deployed** | Per-user cost limits, then everything running on AWS at the ~$2–6/mo idle target | 12–13 | ⬜ |
+| **7. Stretch** | Long-term memory, company research, embeddings matching, mock interview agent, notifications, etc. | — | ⬜ Unordered backlog |
+
+**Core product = Stages 1–6.** That's the product pitched in `README.md`/`CLAUDE.md`: follow companies, boards are polled for you, relevant postings surface, and the agent helps you apply without inventing experience. Stage 7 is everything that makes it better but isn't needed for that loop to work.
+
+Stage order reasoning: the job data model (Stage 2) comes first, because follows, feeds and polling all depend on jobs belonging to a company. Polling (Stage 4) comes before custom companies (Stage 5), because a newly added company should be fetched immediately by the *same* per-company fetch function the poller uses. Building it twice would be wasted work. Cost controls (Slice 12) come before deploy (Slice 13), because deploying opens billed Bedrock calls to anyone who can sign up.
 
 ---
+
+# Stage 1 — MVP (Slices 0–7) ✅
+
+Milestone: the full agent loop works for one signed-in user in a real browser, locally. Everything below in this stage is built; the only open items are the real-browser walkthrough (Slice 7) and the signed-in token check it covers (Slice 6.5). Slice 5's two unchecked items were moved to Stage 7.
 
 ## Slice 0 — Foundation (done)
 
@@ -144,7 +168,7 @@ Originally planned as two separate slices/agents (an interview → tailored-resu
   - **Short-term**, scoped to `(actor_id=user, session_id=job-{job_id})` — lets the Job Agent recall what the Score Fit Agent already found for this job with no manual "seed the prompt" plumbing, and keeps resume/cover-letter/Q&A continuous within one job's conversation. Scoped per job so different jobs' sessions never bleed into each other. **Done**: `jobsentinel/agent/shared/memory.py`'s `build_session_manager` wraps Strands' `AgentCoreMemorySessionManager` (from the `bedrock-agentcore` SDK's own Strands integration, not hand-rolled), wired into `job_agent/agent.py`'s `build_agent`/`invoke`. Resource created once via `scripts/setup_agentcore_memory.py`. Manually verified: stated a name + a "one question at a time" preference in one call, a second call (fresh process) recalled both; a different `job_id` correctly had no access to either.
   - **Long-term**, scoped to `actor_id` only (no job/session scoping) — durable, cross-job facts about the user surfaced during conversation (stated preferences like "wants fast-paced startups," "likes Rust, dislikes C"), available to every future session for that user. Populated via an extraction strategy over conversation transcripts (likely async, post-session) — **the extraction step needs the same anti-hallucination discipline as the live agent**: a single passing mention must not become a generalized trait. **Deliberately deferred, not dropped** — needs a memory strategy (namespace + extraction config) designed first; `build_session_manager`'s `retrieval_config` param already exists for it. Revisit before Slice 7's frontend, since cross-job recall is a user-facing feature, not just plumbing.
   - AgentCore Memory is the agent's semantic recall, not a replacement for the Postgres rows above — the UI's "has Score Fit run" gating stays backed by a real row, never derived from a memory query.
-- [ ] Implement tool `record_answer` — persists a user's answer as a new profile fact, `source="interview"` **(design exercise)** — originally implemented via `jobsentinel.db.profile.add_interview_note` into `ExtractedProfile.interview_notes`, tagged with the `job_id` the conversation happened in. **Removed** along with `job_agent_turns` above (same revisit) — `InterviewNote`/`ExtractedProfile.interview_notes` deleted from `jobsentinel/extraction/schema.py`, `add_interview_note` deleted from `jobsentinel/db/profile.py`. **Still deferred alongside long-term memory above** (same reasoning: writes through AgentCore Memory's long-term tier once that strategy/client exists, not back into the profile row).
+- [ ] **(→ moved to Stage 7, Stretch)** Implement tool `record_answer` — persists a user's answer as a new profile fact, `source="interview"` **(design exercise)** — originally implemented via `jobsentinel.db.profile.add_interview_note` into `ExtractedProfile.interview_notes`, tagged with the `job_id` the conversation happened in. **Removed** along with `job_agent_turns` above (same revisit) — `InterviewNote`/`ExtractedProfile.interview_notes` deleted from `jobsentinel/extraction/schema.py`, `add_interview_note` deleted from `jobsentinel/db/profile.py`. **Still deferred alongside long-term memory above** (same reasoning: writes through AgentCore Memory's long-term tier once that strategy/client exists, not back into the profile row).
 - [x] Implement tool `mark_interview_complete` (or equivalent) — the agent calls this itself when it's done gathering what it needs; the only thing that ends that phase of the loop **(design exercise)**
 - [x] Extend the Job Agent: given a job + profile (+ short-term memory of anything Score Fit already found), identify gaps, ask targeted questions, only draft resume/cover-letter text once it has enough — **hard rule: no fixed turn count in code** — "short-term memory of Score Fit" is the `get_fit_assessment` tool reading the Postgres row directly, not AgentCore Memory (still not wired up)
 - [x] Implement the tailored-resume-rewrite capability: text output only, grounded in profile facts old and new **(design exercise)** — no separate tool/endpoint: SYSTEM_PROMPT's control-flow rule directs the model to draft this as plain conversational text once it has enough grounding, consistent with the "one agent, not three" scope decision
@@ -153,7 +177,7 @@ Originally planned as two separate slices/agents (an interview → tailored-resu
 - [x] `POST /jobs/{id}/agent` (or similar) — start/continue a turn with the Job Agent (calls the agent core directly, never Bedrock from the API layer) — `src/jobsentinel/api/routers/jobs.py`'s `continue_job_agent`, an in-process call into `job_agent.agent.invoke()` (never a network hop), per `api/main.py`'s hard architectural rule
 - [x] `GET /jobs/{id}/agent` — fetch conversation history — `read_job_agent_history`, reading straight from AgentCore Memory via `jobsentinel.agent.shared.memory.list_conversation` (no Postgres copy, consistent with this slice's earlier decision that Memory owns this, not a table)
 - [x] Manually run a full session end-to-end: ask for resume help, then cover-letter help, then a fit question, all in one conversation with no restart; confirm it asks reasonable questions, stops on its own, and nothing drafted invents facts not in the profile/job text — validated across both the CLI and the new HTTP endpoints on job 182's session: gap-question answered, cover-letter requested, and the model correctly refused to invent facts (flagged the weak-match gaps instead of padding), with the whole thing continuous across process restarts
-- [ ] Manually confirm long-term memory works across jobs: state a preference in one job's session, start a session for a *different* job, confirm the Job Agent recalls (and cites) it without being told again — **blocked on the long-term tier above being implemented, not just short-term**
+- [ ] **(→ moved to Stage 7, Stretch)** Manually confirm long-term memory works across jobs: state a preference in one job's session, start a session for a *different* job, confirm the Job Agent recalls (and cites) it without being told again — **blocked on the long-term tier above being implemented, not just short-term**
 
 ## Slice 6 — MVP backend surface: jobs API + Score Fit endpoint (2026-09-19)
 
@@ -182,7 +206,7 @@ Goal: pulled forward from Slice 9's "Clerk auth + multi-user row scoping" so Sli
 - [x] `scripts/eval_score_fit.py` and `scripts/clear_agent_memory.py` updated to take `--user-id`/`--actor-id` instead of a shared constant
 - [x] `tests/test_auth.py` - real JWT verification exercised against a locally-generated RSA keypair (valid token, expired, wrong issuer, forged signature), no real Clerk instance needed. `tests/test_profile_endpoint.py`/`tests/test_jobs_endpoints.py` override `get_current_user_id` via FastAPI's `dependency_overrides` (same "mock the external boundary" pattern as their existing DB/agent mocks)
 - [x] Manually verified against the live app: `GET /jobs` succeeds unauthenticated; `POST /jobs/{id}/score`/`GET /profile` 401 with no/garbage token; a missing `CLERK_ISSUER` surfaces as a 500 (config error) rather than silently accepting the request
-- [ ] Real end-to-end verification (an actual signed-in browser user's token reaching the API) - blocked on Slice 7's frontend actually existing; revisit once `ClerkProvider` is wired up there
+- [ ] **(closes with Slice 7's walkthrough)** Real end-to-end verification (an actual signed-in browser user's token reaching the API) - blocked on Slice 7's frontend actually existing; revisit once `ClerkProvider` is wired up there
 
 ## Slice 7 — Frontend (React/Vite)
 
@@ -202,29 +226,128 @@ Goal: a working UI over Slice 6's API — job list, job detail, a Score Fit butt
 - [x] Install `react-router-dom`; routes: `/` (job list), `/jobs/:jobId` (job detail), `/profile`, `/sign-in`, `/sign-up`; wrap the first three in a `ProtectedRoute` using Clerk's `<SignedIn>`/`<SignedOut>` (or `useAuth()`)
 - [x] Install `@tanstack/react-query`; set up `QueryClientProvider` at the app root
 - [x] `frontend/src/api/client.js` — a thin fetch wrapper that attaches the Clerk session token (`useAuth().getToken()`) to every request to the FastAPI backend; one place all API calls route through, not one-off `fetch()`s per component
-- [ ] React Query hooks per resource, thin wrappers around `api/client.js` calls: `useJobs`, `useJob`, `useScoreFit` (query for `GET`, mutation for `POST`), `useJobAgentHistory` + `useSendJobAgentMessage`, `useProfile`, `useUploadProfile` **(design exercise — you write the hooks and the components that consume them; the setup above is scaffolding, this is the actual frontend logic)**
+- [x] React Query hooks per resource, thin wrappers around `api/client.js` calls: `useJobs`, `useJob`, `useScoreFit` (query for `GET`, mutation for `POST`), `useJobAgentHistory` + `useSendJobAgentMessage`, `useProfile`, `useUploadProfile` **(design exercise — you write the hooks and the components that consume them; the setup above is scaffolding, this is the actual frontend logic)**
 - [x] Job List page: table/list from `useJobs`, client-side substring filter on title (no backend pagination/filtering exists yet — 623 rows is small enough to filter in-browser) **(design exercise)** — built 2026-09-22; see `UI.md` Step 2 for the as-built shape (deviates slightly from that step's original spec) and the deferred `jobs.company`/ordering/`fetched_at` follow-up above.
-- [ ] Job Detail page: posting text from `useJob`; a Score Fit panel with idle/loading/result/error states (`useScoreFit`), rendering `FitAssessment`'s `match`/`strengths`/`gaps`/`recommendation_note`; a Job Agent chat gated on "has a successful Score Fit run for this job" (check whether `useScoreFit`'s `GET` 404s), with message history (`useJobAgentHistory`) + input (`useSendJobAgentMessage`) and a progress state for the multi-second reply (no streaming) **(design exercise — this is the core UI logic of the slice)**
-- [ ] Profile page: upload form (`useUploadProfile`) + rendering of the extracted `ExtractedProfile` facts (education/work/projects/certs/skills) from `useProfile` **(design exercise)**
+- [x] Job Detail page: posting text from `useJob`; a Score Fit panel with idle/loading/result/error states (`useScoreFit`), rendering `FitAssessment`'s `match`/`strengths`/`gaps`/`recommendation_note`; a Job Agent chat gated on "has a successful Score Fit run for this job" (check whether `useScoreFit`'s `GET` 404s), with message history (`useJobAgentHistory`) + input (`useSendJobAgentMessage`) and a progress state for the multi-second reply (no streaming) **(design exercise — this is the core UI logic of the slice)**
+- [x] Profile page: upload form (`useUploadProfile`) + rendering of the extracted `ExtractedProfile` facts (education/work/projects/certs/skills) from `useProfile` **(design exercise)**
+  - *As built (2026-09-27, UI.md Step 5):* deviations from UI.md's spec — (1) both tab panels are `keepMounted` (added in Step 4 so an in-flight Score Fit run survives a tab switch), so the chat is rendered as `{canChat && <JobAgentChat/>}` inside a kept-mounted panel: no history GET fires until the job is scored, and once mounted an unsent draft now **survives** tab switches (UI.md had accepted losing it). (2) The "Score this job first" hint lives in `ScoreFitPanel`'s not-scored state, not as a `title` on the disabled trigger — a disabled Base UI tab is `pointer-events-none`, so the tooltip could never show (and tooltips don't exist on touch). (3) The signed-out "sign in to see your fit" card (Decision 10) links to `/sign-in?redirect_url=<this job>` so sign-in returns to the posting.
 - [ ] Manually walk the full flow in a real browser: sign in, upload a resume, browse jobs, score one, chat with the Job Agent across multiple turns, refresh the page mid-flow and confirm everything reloads from the backend rather than depending on lost client state
 
-## Deferred / Post-MVP
+# Stage 2 — Multi-company support
 
-Everything below is intentionally out of scope for now — not dropped, just resequenced. Each item names which old slice it came from so nothing here looks silently cut.
+## Slice 8 — Companies, multi-ATS ingestion, and the job data model
 
-- **Company research / web search tool** (was Slice 6) — a background grounding tool only, no dedicated UI; deferred until the MVP backend and frontend are both stable, per the original "avoid picking a search API before the core loop is proven" reasoning.
-- **AgentCore Memory long-term tier + `record_answer` tool** (already flagged deferred in Slice 5) — needs a memory/extraction strategy designed first; short-term per-job memory already covers the MVP.
-- **Productionized poller, EventBridge Lambda deployment, `companies` CRUD, board-token inference** (was Slice 7's infra portion) — the MVP serves the jobs already loaded; no new ingestion is needed until real multi-company following exists.
-- **Embeddings/pgvector fit-matching** (was Slice 8) — naive DB lookups are enough until there's more than one board to search across.
-- **Mock Interview & Prep Agent** (was Slice 8) — standalone stretch capability, not on the critical path to a usable MVP.
-- **Conversational job-query agent, save/track/analytics** (was Slice 8) — depends on the job feed/filtering work above, itself deferred.
-- **Clerk auth + multi-user row scoping** (was Slice 9) — **superseded by Slice 6.5**, pulled forward and mostly done: `profiles.user_id`, `get_current_user_id`, and every profile/score/agent route requiring sign-in already exist. What's still actually deferred: real end-to-end verification with a signed-in browser user (needs Slice 7's frontend), and multi-tenant scoping of anything *other* than profiles/agent runs (jobs stay a shared global feed until company-following CRUD exists).
-- **Hardening & AWS deployment** (Lambda+Mangum, AgentCore Runtime deploy, structured logging, retries/backoff, cost monitoring) (was Slice 9) — order relative to the stretch items above isn't decided yet ("deployment or stretch features" — a later day's call, not today's).
-- **Job feed data model: `jobs.company`, default ordering, and `fetched_at` semantics** (raised during Slice 7 frontend work, 2026-09-22) — deliberately deferred until after the MVP is up, not dropped:
-  - Add a `jobs.company` column (display name, distinct from `board_token`, which is an ATS slug not guaranteed presentable). Source it from the ATS payload itself, not a hardcoded token→name map: confirmed live that Greenhouse's board API already returns `company_name` per posting, so this is just threading an existing field through `normalized_job`/`upsert_job`, same as every other field.
-  - Default `GET /jobs` ordering should be `fetched_at DESC` (recency), not alphabetical (title/company both cluster badly — "a wall of A's," or one heavily-loaded company dominating). Sorting is a fixed default with no user input, so it belongs in `list_jobs`'s `ORDER BY` (DB), not the frontend — different from the title search filter above, which stays client-side since it's user-driven state and the row count doesn't justify a backend contract change yet.
-  - Sort/display by the ATS's own `first_published` instead of our ingestion timestamp: add a `posted_at` column, populated straight from Greenhouse's `first_published` field (confirmed live it's returned per-posting). It's safe to overwrite on every re-poll same as `title`/`description` — no write-once logic needed, since the ATS is the source of truth for it.
-  - Rename the existing `fetched_at` → `last_synced_at` (same overwrite-every-poll behavior it already has, just named honestly) — useful later for detecting a listing that's gone stale/delisted.
-  - Observe data and extract location from jobs to display on front end and additonal filtering
-  - **Considered and cut**: a write-once `first_fetched_at` ("when did *we* first see this") and storing the ATS's own `updated_at` (its last-edit date) as separate columns. Neither has a concrete consumer today — the only use case for `first_fetched_at` is a "new since your last visit" badge, which isn't a planned feature — and `updated_at` is still recoverable from `raw_json` (stored in full) the moment something actually needs it, no migration required. Don't add either without a real feature driving it.
-  - Frontend stand-in until this lands: the jobs table's date column is labeled "Last synced" (not "Posted"), since that's what `fetched_at` actually represents today.
+Goal: jobs from a seeded list of companies across all three ATS's, stored with a real `company` relationship, loaded by ingestion code that lives in the package (the future poller Lambda can't import from `scripts/`). Still loaded by a one-off command; scheduling is Stage 4.
+
+*Teaches:* normalizing several similar-but-different external APIs behind one interface (adapter pattern), foreign keys and data migrations on a table that already has rows, moving exploration code into production code without breaking the scripts that still use it.
+
+- [ ] `companies` table: `id`, `name` (display name), `source` (`greenhouse`/`ashby`/`lever`), `board_token`, `created_at`, `UNIQUE (source, board_token)`. Global, not per-user: a company is shared data, following it is per-user (Slice 9) **(design exercise — the schema)**
+- [ ] `jobs.company_id` FK → `companies.id`. Data migration: create the Anthropic company row and backfill the existing 594 jobs to it before making the column `NOT NULL`
+- [ ] Job data-model fixes (moved here from the old Deferred section, reasoning preserved):
+  - Company display name comes from the `companies` row, not `board_token` (an ATS slug, not guaranteed presentable). Confirmed live that Greenhouse returns `company_name` per posting, so seed names can be checked against it
+  - `posted_at` column from the ATS's own publish date (Greenhouse `first_published`; find the Ashby/Lever equivalents). Safe to overwrite on every re-poll, same as `title`/`description`
+  - Rename `fetched_at` → `last_synced_at` (same overwrite-every-poll behavior, named honestly). Stage 4 relies on it for delisting
+  - `location` (and a remote flag if the ATS exposes one) — look at real payloads first; all three ATS's shape this differently
+  - Default `GET /jobs` ordering `posted_at DESC` in `list_jobs`'s `ORDER BY`, not alphabetical
+- [ ] `jobsentinel/ingestion/` package: move `job_text.py` (`normalized_job` etc.) and `positions.py` in from `scripts/`, plus one fetch function per ATS behind a common signature, e.g. `fetch_board(company) -> list[NormalizedJob]` **(design exercise — the adapter interface)**. `scripts/explore_*.py` and `load_jobs.py` import from the package afterwards instead of the reverse
+- [ ] Seed list: ~10–20 real companies spread across all three ATS's, as a checked-in data file loaded by a seed command (not hardcoded in code), idempotent to re-run
+- [ ] `load_jobs.py` → loads every seeded company. One company failing (bad token, timeout) must log and continue, not abort the run. This is the first taste of Stage 4's per-company failure isolation
+- [ ] API: `JobSummary`/`JobDetail` gain `company`, `posted_at`, `location`; `GET /companies` (public, list) for the frontend's filters
+- [ ] Frontend: company column + company filter on the jobs table; "Last synced" column becomes "Posted"; company name in the job detail header instead of `board_token`
+- [ ] Re-check the Slice 4 eval harness with a couple of non-Anthropic postings (Slice 4 noted cross-company differences were never exercised). Posting styles/lengths vary a lot by ATS
+- [ ] Row count check: if the total job count is now in the thousands, the client-side-only filter from Slice 7 is the thing to revisit in Slice 9, not here
+
+# Stage 3 — Personalized feed
+
+## Slice 9 — Follow companies, target roles, and "my jobs"
+
+Goal: a signed-in user follows companies, says which roles (and optionally locations) they want, and gets a focused feed of only matching jobs. The public all-jobs list stays for signed-out browsing.
+
+*Teaches:* many-to-many relationships (users ↔ companies), per-user row scoping on shared data, when filtering moves from client to server (user-driven filters over a growing dataset), reusing deterministic matching (`positions.py`) instead of reaching for embeddings.
+
+- [ ] `user_companies` table (`user_id`, `company_id`, `created_at`, PK on both) **(design exercise)**
+- [ ] `user_preferences`: target positions (keys from `CANONICAL_POSITIONS`), optional locations / remote-ok. One row per user, or JSONB on a table; decide and note why **(design exercise)**
+- [ ] `POST /companies/{id}/follow`, `DELETE /companies/{id}/follow`, `GET /me/companies`; `GET/PUT /me/preferences`. All auth-required, all scoped by `get_current_user_id`
+- [ ] `GET /jobs/feed` (auth): jobs from followed companies, filtered by target positions via `positions.py`'s title matching and by location. Server-side filtering: this is now per-user data over thousands of rows, which is exactly the case Slice 7's "stays client-side" decision said would change **(design exercise — the query and where matching runs: SQL vs. Python)**
+- [ ] Frontend: a "Companies" page (browse seeded companies, follow/unfollow), a preferences form (role multi-select, location), and a "My jobs" view as the signed-in default, with the all-jobs list still reachable
+- [ ] Empty states that teach the flow: no follows → "follow some companies"; follows but no preferences → prompt to pick roles; zero matches → suggest widening roles
+- [ ] New-user onboarding path: sign up → upload resume → follow companies → pick roles → feed. Walk it in the browser
+
+# Stage 4 — Polling
+
+## Slice 10 — Scheduled ingestion, delisting, and "new" jobs
+
+Goal: boards refresh without anyone running a script, closed postings stop showing, and users can see what's new. Built and scheduled **locally** first (a CLI entry point plus the same handler function the Lambda will call). The EventBridge/Lambda deploy happens in Slice 13.
+
+*Teaches:* idempotent batch jobs, failure isolation, observability for unattended work (you only find out it broke by looking at its records), designing for the Lambda handler shape before deploying it.
+
+- [ ] Recreate `jobsentinel/poller/`: `run_poll()` fetches every company with **at least one follower** (or all seeds; decide, it drives cost and API load), upserts via the Slice 8 adapters, isolates each company's failure, and returns a summary. A thin `handler(event, context)` wraps it for Lambda later
+- [ ] `poll_runs` table: one row per run (started/finished, companies ok/failed, jobs new/updated/closed) plus per-company errors, so a silent failure is visible **(design exercise — what's worth recording)**
+- [ ] Delisting: a job not returned by its board on a successful fetch of that board is marked closed (`closed_at`/`is_active`), never deleted, because scores and chats reference it. Only mark closed when that company's fetch **succeeded**: a failed fetch must not close every job at that company
+- [ ] Closed jobs: hidden from feeds by default; job detail still loads, with a "no longer accepting applications" banner; scoring/chat on a closed job is allowed but visibly flagged
+- [ ] "New" jobs: reinstate `first_seen_at` (write-once, set on insert). It was cut from the old Deferred section for lacking a consumer; this is the consumer. Plus per-user "last viewed feed at" to drive a **New** badge and a "new since last visit" count
+- [ ] Politeness: a small delay between requests, a timeout per fetch, and retry with backoff on 429/5xx only
+- [ ] Tests: adapters mocked; cases for a failed company, a delisted job, a re-listed job, and re-running the same poll twice producing no duplicate changes
+
+# Stage 5 — Custom companies
+
+## Slice 11 — Add any company: board-token resolution
+
+Goal: a user types a company (name or careers-page URL) that isn't in the seed list; JobSentinel finds its ATS board, adds it, fetches it right away, and the user follows it. Deterministic, not an LLM call (see the classification table).
+
+*Teaches:* heuristic resolution against external systems, caching negative results, designing a UX for "we tried and couldn't," abuse-proofing a user-triggered outbound call.
+
+- [ ] Resolver: (1) if given a URL, parse known ATS URL patterns directly (`boards.greenhouse.io/<token>`, `jobs.ashbyhq.com/<token>`, `jobs.lever.co/<token>`); (2) otherwise generate slug candidates from the name (lowercase, strip punctuation/spaces, drop suffixes like "inc"/"ai") and probe each ATS's public API **(design exercise — candidate generation and probe order)**
+- [ ] A found board must have at least one posting, or ask the user to confirm (an empty board and a wrong guess look the same)
+- [ ] Cache attempts, hits and misses, so the same name isn't re-probed on every request; misses expire
+- [ ] `POST /companies` (auth): resolve → create company (or return the existing one; duplicates collapse on `UNIQUE (source, board_token)`) → immediate first fetch using the Stage 4 per-company fetch → auto-follow
+- [ ] Limits: per-user rate limit on add attempts, a cap on probes per attempt
+- [ ] UX: "Add a company" on the Companies page; a clear failure message listing what was tried, plus a fallback to paste the careers-page URL
+- [ ] Newly added companies join the nightly poll automatically (they now have a follower)
+
+# Stage 6 — Ready for deployment → deployed
+
+## Slice 12 — Cost controls and production readiness
+
+Goal: safe to let strangers sign up. Today any signed-in user can trigger unlimited billed Bedrock runs.
+
+*Teaches:* token/cost budgets as a schema concern (per CLAUDE.md, "token budgets belong in the schema from day one"), rate limiting, deciding what the system should refuse.
+
+- [ ] Per-user usage accounting from `agent_runs.cost_usd` (already recorded): daily/monthly spend per user **(design exercise — query vs. a running counter)**
+- [ ] Budget enforcement before invoking an agent: over budget → a clear 429-style error the UI shows, not a silent failure. Separate limits for Score Fit runs and Job Agent turns
+- [ ] Decision to record explicitly: scoring stays **on-demand only**. Auto-scoring every new matching posting nightly would break the idle-cost target
+- [ ] Resume upload → S3 presigned upload (the API receives only the key). Lambda's 6 MB request-payload limit makes upload-through-the-API fragile
+- [ ] Structured logging (JSON, a request id, user id, agent run id) across API, agent and poller
+- [ ] Config audit: everything environment-specific comes from `Settings`, nothing hardcoded to localhost
+
+## Slice 13 — AWS deployment
+
+Goal: the three deployable units from `CLAUDE.md`'s architecture running on AWS, with the frontend served from S3+CloudFront.
+
+*Teaches:* serverless packaging, IAM least privilege, secrets management, the difference between an in-process call and a network boundary.
+
+- [ ] **Agent boundary:** the API currently calls `score_fit`/`job_agent` `invoke()` **in-process**. In production the agent runs in AgentCore Runtime, so the API needs an invoke-AgentCore client behind the same function signature (local dev can keep the in-process path via config) **(design exercise)**
+- [ ] Supabase Postgres + pgvector; run Alembic migrations against it; move data
+- [ ] API: FastAPI + Mangum on Lambda with a Function URL
+- [ ] Agent: container image to AgentCore Runtime
+- [ ] Poller: Lambda + EventBridge Scheduler (nightly), reusing Slice 10's `handler`
+- [ ] Frontend: `npm run build` → S3 + CloudFront; production `VITE_API_BASE_URL`
+- [ ] Secrets/config in SSM Parameter Store; IAM role per unit with only what it needs
+- [ ] Clerk production instance; production CORS origin
+- [ ] AWS Budgets alarm at the idle-cost target; CloudWatch alarm on poller failures (from `poll_runs`)
+- [ ] Full walkthrough against production, including a second user to confirm isolation
+- [ ] Update `CLAUDE.md`/`README.md` with deploy commands and the production architecture as built
+
+# Stage 7 — Stretch (unordered backlog)
+
+Nothing here is needed for the core loop. Pick by interest and learning value once Stage 6 is done; promote an item to a numbered slice before starting it.
+
+- **AgentCore Memory long-term tier + `record_answer`** (moved from Slice 5's unchecked items): cross-job user facts ("wants fast-paced startups"). Needs a memory/extraction strategy designed first. Short-term per-job memory already covers the MVP.
+- **Company research / web search tool**: a background grounding tool for Score Fit and the Job Agent, no dedicated UI. Possibly a nested agent-as-tool if it becomes multi-step (see scope decisions).
+- **Embeddings/pgvector matching** (Titan V2, 1024d): rank the feed by profile similarity instead of title aliases only.
+- **Notifications**: email digest of new matching jobs (the "polls daily and tells you" experience), built on Slice 10's `first_seen_at`.
+- **Mock Interview & Prep Agent**: standalone multi-turn agent.
+- **Conversational job-query agent** ("find me backend roles at startups that…").
+- **Save/track/analytics**: application status per job, simple funnel stats.
+- **Streaming replies**: only if non-negotiable. Move the API to App Runner per `CLAUDE.md`'s known tradeoff; no workarounds on Lambda+Mangum.
+- **Eval harness growth**: a real strong/good-match fixture (never exercised, see Slice 4), plus Job Agent evals (does it ask before drafting, does it ever invent facts).

@@ -71,7 +71,9 @@ const ScoreFitBody = ({ jobId }) => {
     if (score.data === null) {
         return (
             <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">Not scored yet against your current resume.</p>
+                <p className="text-sm text-muted-foreground">
+                    Not scored yet against your current resume. Scoring also unlocks the Job Agent.
+                </p>
                 <Button size="lg" className="w-full" onClick={() => run.mutate()} disabled={run.isPending}>
                     {run.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
                     {run.isPending ? 'Analyzing fit…' : 'Score fit'}
