@@ -1,0 +1,22 @@
+name,source,board_token
+Anthropic,greenhouse,anthropic
+Stripe,greenhouse,stripe
+Airbnb,greenhouse,airbnb
+Figma,greenhouse,figma
+Databricks,greenhouse,databricks
+Reddit,greenhouse,reddit
+Discord,greenhouse,discord
+OpenAI,ashby,openai
+Notion,ashby,notion
+Ramp,ashby,ramp
+Linear,ashby,linear
+Cursor,ashby,cursor
+Perplexity,ashby,perplexity
+Snowflake,ashby,snowflake
+Spotify,lever,spotify
+Palantir,lever,palantir
+Binance,lever,binance
+Zoox,lever,zoox
+Shield AI,lever,shieldai
+Veeva,lever,veeva
+Crypto.com,lever,crypto
