@@ -158,7 +158,7 @@ State map — what lives where:
 
 3. **`hooks/useApi.js`** — `useApi()`: calls Clerk's `useAuth()` for `getToken` and returns a memoized (`useCallback`, dep `[getToken]`) function `(path, options) => apiFetch(path, { ...options, getToken })`. Every data hook calls `const api = useApi()`. (This is why `apiFetch` takes `getToken` as an argument — tokens are only available inside React.)
 
-4. **`hooks/queryKeys.js`** — export one `queryKeys` object: `jobs` → `['jobs']`; `job(id)` → `['job', id]`; `profile` → `['profile']`; `score(id)` → `['score', id]`; `agent(id)` → `['agent', id]`. `id` is always a **number** (never the raw route string — `['job', 182]` ≠ `['job', '182']`). The first element of `score`/`agent` keys is deliberately a stable prefix so `invalidateQueries({ queryKey: ['score'] })` hits every job.
+4. **`hooks/queryKeys.js`** — export one `queryKeys` object: `jobs` → `['jobs']`; `job(id)` → `['job', id]`; `profile` → `['profile']`; `score(id)` → `['score', id]`; `agent(id)` → `['agent', id]`. `id` is always a **number** (never the raw route string — `['job', 199]` ≠ `['job', '199']`). The first element of `score`/`agent` keys is deliberately a stable prefix so `invalidateQueries({ queryKey: ['score'] })` hits every job.
 
 5. **QueryClient defaults in `main.jsx`**: `new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, retry: (count, error) => !(error instanceof ApiError && error.status >= 400 && error.status < 500) && count < 2 } } })`. Leave mutations at their default (**no retry** — agent calls cost tokens and aren't idempotent).
 
@@ -204,7 +204,7 @@ State map — what lives where:
 - Table shows ~623 jobs; typing "engineer" narrows the count live; clearing restores all.
 - Network tab: exactly one `GET /jobs`; navigating to Profile and back within 5 min does **not** refetch.
 - **Sign out and reload `/jobs` directly** (public route — Decision 9): the table still loads. `GET /jobs` still succeeds with no `Authorization` header this time (it's a public endpoint — `apiFetch` just omits the header when `getToken()` returns nothing signed out).
-- Clicking a title goes to `/jobs/182` (still a stub).
+- Clicking a title goes to `/jobs/199` (still a stub).
 - Stop uvicorn, hard-reload → `ErrorAlert` reads "Can't reach the server…"; restart uvicorn, reload → table loads again (proves the `ApiError(0, …)` path didn't hang the UI; no retry button yet, see deviation note above).
 
 ---
@@ -279,11 +279,11 @@ State map — what lives where:
    - **Right, signed in:** shadcn `Tabs` with `value={tab}` / `onValueChange={setTab}` from `const [tab, setTab] = useState('fit')`; `TabsList` with triggers "Fit score" (`value="fit"`) and "Job Agent" (`value="agent"`, `disabled` for now); `TabsContent value="fit"` → `<ScoreFitPanel jobId={jobId} />`. Step 5 enables and fills the second tab. No sticky positioning, no auto-switching tabs after scoring.
 
 **Done when:**
-- `/jobs/182`: posting text keeps paragraph/bullet line breaks; "Score fit" → loading state → assessment renders (badge color, strengths, gaps with type badges, recommendation). Network tab shows one `POST /jobs/182/score`.
-- Hard-refresh → result appears from a single `GET /jobs/182/score` (no POST, no new `agent_runs` row).
+- `/jobs/199`: posting text keeps paragraph/bullet line breaks; "Score fit" → loading state → assessment renders (badge color, strengths, gaps with type badges, recommendation). Network tab shows one `POST /jobs/199/score`.
+- Hard-refresh → result appears from a single `GET /jobs/199/score` (no POST, no new `agent_runs` row).
 - "Re-run" replaces the result and creates a new `agent_runs` row (`select id, kind, outcome from agent_runs order by id desc limit 3;`).
 - Second user with no resume sees the "upload your resume first" state on the same job. `/jobs/999999` and `/jobs/abc` both show a not-found state (not a crash, not endless skeletons).
-- **Sign out and open `/jobs/182` directly:** the posting still renders (public); the right panel shows the "Sign in to see your fit" card instead of Tabs, and no `GET /jobs/182/score` request fires (Network tab — proves `enabled: isSignedIn` worked, not just that the UI hid the result).
+- **Sign out and open `/jobs/199` directly:** the posting still renders (public); the right panel shows the "Sign in to see your fit" card instead of Tabs, and no `GET /jobs/199/score` request fires (Network tab — proves `enabled: isSignedIn` worked, not just that the UI hid the result).
 - Upload a new resume, return to the job → "Not scored yet" (proves the invalidation from Step 3); the Job Agent tab is still disabled.
 
 ---
@@ -316,10 +316,10 @@ State map — what lives where:
    - Job Agent trigger: `disabled={!canChat}`; add a `title`/muted hint "Score this job first" when disabled. `TabsContent value="agent"` renders `{canChat && <JobAgentChat jobId={jobId} />}`. (Switching tabs unmounts the chat and loses an unsent draft; accepted — history and any in-flight mutation live in the query cache/mutation cache and survive.)
 
 **Done when:**
-- On a scored job (182) the Job Agent tab is enabled; on an unscored job it's disabled with the hint.
+- On a scored job (199) the Job Agent tab is enabled; on an unscored job it's disabled with the hint.
 - Empty state shows the three starters; click "Help me tailor my resume…" → your bubble + "Thinking…" → Markdown-rendered reply appears. Send a follow-up ("what did you mean by …") — it remembers context.
 - Enter sends, Shift+Enter adds a newline; a sent message is pinned near the top of the view with the reply below it; scroll up mid-conversation and the "jump to latest" arrow appears, and a new reply doesn't yank you back down; after a hard refresh the view opens at the latest turn; the copy button copies the reply text.
-- Hard-refresh mid-conversation → full history reloads in order from `GET /jobs/182/agent`. Network tab: no `GET …/agent` fires after a send (Decision 6). Verify the `role` strings in that response are `user`/`assistant`.
+- Hard-refresh mid-conversation → full history reloads in order from `GET /jobs/199/agent`. Network tab: no `GET …/agent` fires after a send (Decision 6). Verify the `role` strings in that response are `user`/`assistant`.
 - A different job has its own empty conversation.
 - Stop uvicorn, send a message → `ErrorAlert` "Message failed" and your text returns to the textarea.
 - Upload a new resume while on the chat tab → tab falls back to "Fit score" and the chat is disabled until re-scored.
@@ -335,7 +335,7 @@ State map — what lives where:
 2. **Responsive** — DevTools at 375 px width: jobs table hides Source/Fetched columns without horizontal scroll, Job Detail stacks (posting, then tabs), chat composer stays usable, header doesn't overflow.
 3. **Keyboard/a11y quick pass** — tab through the job filter, table links, tabs, textarea, send button; every interactive element has a visible focus ring and an accessible name (icon-only buttons have `aria-label`).
 4. `npm run lint`, `npm run build`, then `npm run preview` and load the built app once.
-5. **Full walkthrough** (fresh browser/incognito, signed out throughout the first stage, one hard-refresh after each later stage): land on `/` → hero renders, no redirect → "Browse jobs" → `/jobs` loads and filters signed out → open job 182 → posting renders, right panel shows "Sign in to see your fit" → "Sign in" → sign up a new `+clerk_test` user → redirected back → Jobs banner ("sign in to score jobs" banner is gone now that you're signed in; "upload your resume" banner shows instead) → upload resume → profile renders → back to job 182 → Score fit → open Job Agent → 3 turns (gap question, resume help, cover letter) → refresh → sign out (from `UserButton`, while sitting on `/jobs/182`: confirm you're **not** redirected — the posting stays visible, the right panel reverts to the sign-in card) → sign in again → everything still there. Then a second `+clerk_test` user in incognito: confirm they see none of the first user's profile, scores, or chat.
+5. **Full walkthrough** (fresh browser/incognito, signed out throughout the first stage, one hard-refresh after each later stage): land on `/` → hero renders, no redirect → "Browse jobs" → `/jobs` loads and filters signed out → open job 199 → posting renders, right panel shows "Sign in to see your fit" → "Sign in" → sign up a new `+clerk_test` user → redirected back → Jobs banner ("sign in to score jobs" banner is gone now that you're signed in; "upload your resume" banner shows instead) → upload resume → profile renders → back to job 199 → Score fit → open Job Agent → 3 turns (gap question, resume help, cover letter) → refresh → sign out (from `UserButton`, while sitting on `/jobs/199`: confirm you're **not** redirected — the posting stays visible, the right panel reverts to the sign-in card) → sign in again → everything still there. Then a second `+clerk_test` user in incognito: confirm they see none of the first user's profile, scores, or chat.
 6. **Docs (per CLAUDE.md "don't silently drift"):** tick the Slice 7 checkboxes and Slice 6.5's "Real end-to-end verification" in `BUILD_PLAN.md`; in `CLAUDE.md` update "Project status" (frontend now exists; add `cd frontend && npm run dev` and the `frontend/.env.local` requirement to the daily commands); add any deviations you actually made to BUILD_PLAN's Slice 7 section.
 
 **Done when:** the walkthrough passes end to end with no console errors and no unhandled promise rejections in DevTools.
@@ -347,7 +347,7 @@ State map — what lives where:
 - Why CORS preflight exists and what `allow_headers` is for; why Bearer tokens don't need `allow_credentials`.
 - Why `FormData` bodies must not get a manual `Content-Type`.
 - Server state vs. client state, and why almost nothing here is in `useState`.
-- Query keys as a cache address; prefix invalidation (`['score']`) vs. exact keys (`['score', 182]`).
+- Query keys as a cache address; prefix invalidation (`['score']`) vs. exact keys (`['score', 199]`).
 - `setQueryData` (write what you already know) vs. `invalidateQueries` (mark stale and refetch), and when each is correct — Steps 3–5 use both.
 - Hook-level vs. call-level mutation callbacks and what happens on unmount.
 - `isPending` / `isError` / `data === null` as three distinct states.

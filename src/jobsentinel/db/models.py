@@ -17,14 +17,18 @@ Every model inherits from `Base` below so they all register into one
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Text, DateTime, ForeignKey, Numeric, UniqueConstraint
+from sqlalchemy import Text, DateTime, ForeignKey, Numeric, UniqueConstraint, func, MetaData
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     """Shared declarative base for every ORM model in this project."""
-
+    metadata = MetaData(naming_convention={
+        "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+        "uq": "uq_%(table_name)s_%(column_0_name)s",
+        # ix / ck / pk too
+    })
 
 class Job(Base):
     """A single job posting, normalized across Greenhouse/Ashby/Lever.
@@ -32,7 +36,7 @@ class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (
         # A posting is uniquely identified by (source, ats_job_id) - this
-        # is the real dedupe key upsert_job() relies on. Making it an
+        # is the real dedupe key upsert_jobs() relies on. Making it an
         # actual database constraint (not just a Python convention) is what
         # makes repeated/concurrent loads safe instead of racy.
         UniqueConstraint("source", "ats_job_id", name="uq_jobs_source_ats_job_id"),
@@ -45,9 +49,11 @@ class Job(Base):
     source: Mapped[str] = mapped_column(Text)
     # The company's board token/slug on that ATS 
     board_token: Mapped[str] = mapped_column(Text)
+    # FK map job to specific company
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
     # Job title/position (SWE, AI Eng, etc)
     title: Mapped[str] = mapped_column(Text)
-    # The cleaned, human/LLM-readable posting text scripts/job_text.py
+    # The cleaned, human/LLM-readable posting text jobsentinel.ingestion.jobs.job_text
     # produces - HTML stripped, and for ATS's like Lever that split
     # requirements/skills into a separate section list, already recombined.
     description: Mapped[str] = mapped_column(Text)
@@ -178,3 +184,18 @@ class ToolCall(Base):
     args: Mapped[dict] = mapped_column(JSONB)
     result: Mapped[dict] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+class Company(Base):
+    """Companies that are being tracked for jobs 
+    """
+    __tablename__ = "companies"
+    __table_args__ = (
+            UniqueConstraint("source", "board_token", name="uq_companies_source_board_token"),
+        )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    # Which ATS this came from: "greenhouse" | "ashby" | "lever"
+    source: Mapped[str] = mapped_column(Text)
+    # slug/ board_token
+    board_token: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

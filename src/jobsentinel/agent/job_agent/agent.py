@@ -31,14 +31,14 @@ actor_id only (across jobs) decided first, then a tool that writes through
 it, per BUILD_PLAN.md Slice 5.
 
 Run locally without deploying (one-shot, no server):
-    uv run python -m jobsentinel.agent.job_agent.agent '{"job_id": 182, "user_id": "user_2abc123", "message": "help me tailor my resume"}'
+    uv run python -m jobsentinel.agent.job_agent.agent '{"job_id": 199, "user_id": "user_2abc123", "message": "help me tailor my resume"}'
 
 Run the local AgentCore dev server:
     uv run python -m jobsentinel.agent.job_agent.agent
-    # then: curl -X POST http://localhost:8080/invocations -d '{"job_id": 182, "user_id": "user_2abc123", "message": "..."}'
+    # then: curl -X POST http://localhost:8080/invocations -d '{"job_id": 199, "user_id": "user_2abc123", "message": "..."}'
 
 Deploy for real: `agentcore configure --entrypoint src/jobsentinel/agent/job_agent/agent.py`,
-then `agentcore launch`. Invoke the deployed agent: `agentcore invoke '{"job_id": 182, "user_id": "user_2abc123", "message": "..."}'`.
+then `agentcore launch`. Invoke the deployed agent: `agentcore invoke '{"job_id": 199, "user_id": "user_2abc123", "message": "..."}'`.
 
 `user_id` (a Clerk ID) is a plain payload field the API layer resolves via
 jobsentinel.api.auth.get_current_user_id and hands down - see

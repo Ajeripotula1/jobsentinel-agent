@@ -21,7 +21,7 @@ from jobsentinel.db.models import Profile
 def insert_profile(engine: Engine, data: dict, user_id: str) -> dict:
     """Insert a new profile snapshot owned by `user_id` and return it (with
     its assigned id and created_at). Every call creates a new row - there's
-    no update path, same reasoning as jobsentinel.db.jobs.upsert_job for
+    no update path, same reasoning as jobsentinel.db.jobs.upsert_jobs for
     using a Core INSERT statement rather than the ORM's Session.add() (this
     keeps the return shape - a plain dict, not a live ORM object -
     consistent with the rest of this module's functions).

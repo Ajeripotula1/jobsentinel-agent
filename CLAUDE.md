@@ -13,7 +13,7 @@ Commands in daily use:
 - `cd frontend && npm run dev` — run the UI on :5173 (needs `frontend/.env.local` with `VITE_API_BASE_URL` and `VITE_CLERK_PUBLISHABLE_KEY`)
 - `cd frontend && npm run lint && npm run build` — oxlint + production build check
 - `uv run pytest -m "not integration"` — default test run (mocked DB/agent calls, no Postgres/Bedrock needed); drop the marker filter to include the real-Bedrock extraction test
-- `uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 182}'` / `jobsentinel.agent.job_agent.agent '{"job_id": 182, "message": "..."}'` — run either agent one-shot from the CLI, no server
+- `uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 199}'` / `jobsentinel.agent.job_agent.agent '{"job_id": 199, "message": "..."}'` — run either agent one-shot from the CLI, no server
 
 ## Working with the user (collaboration mode)
 

@@ -98,6 +98,7 @@ Goal: at least one real job posting's text is durably queryable, via a data-acce
 - [x] `docker compose up -d`, `alembic revision --autogenerate -m "create jobs table"`, `alembic upgrade head`, `python scripts/load_jobs.py anthropic` — all run successfully
 - [x] Confirmed rows landed: 594 rows in `jobs` from Anthropic's Greenhouse board
 - [x] Fixed test case for Slices 2-4: **job `id = 182`** — "Full-Stack Software Engineer, Reinforcement Learning" (`ats_job_id 5186067008`, ~10.3k-character description)
+  - *(2026-10-02)* After a later reload of the Anthropic board, this same posting (`ats_job_id 5186067008`) is now **job `id = 199`**; id 182 is a different posting. Entries below that mention 182 record runs made before that reload. Use 199 going forward.
 
 ## Slice 2 — Profile ingestion (resume → structured facts)
 
@@ -241,17 +242,17 @@ Goal: jobs from a seeded list of companies across all three ATS's, stored with a
 
 *Teaches:* normalizing several similar-but-different external APIs behind one interface (adapter pattern), foreign keys and data migrations on a table that already has rows, moving exploration code into production code without breaking the scripts that still use it.
 
-- [ ] `companies` table: `id`, `name` (display name), `source` (`greenhouse`/`ashby`/`lever`), `board_token`, `created_at`, `UNIQUE (source, board_token)`. Global, not per-user: a company is shared data, following it is per-user (Slice 9) **(design exercise — the schema)**
-- [ ] `jobs.company_id` FK → `companies.id`. Data migration: create the Anthropic company row and backfill the existing 594 jobs to it before making the column `NOT NULL`
+- [x] `companies` table: `id`, `name` (display name), `source` (`greenhouse`/`ashby`/`lever`), `board_token`, `created_at`, `UNIQUE (source, board_token)`. Global, not per-user: a company is shared data, following it is per-user (Slice 9) **(design exercise — the schema)**
+- [x] `jobs.company_id` FK → `companies.id`. Data migration: create the Anthropic company row and backfill the existing jobs (640 by then) to it before making the column `NOT NULL`. Done as expand → backfill → contract in one migration (`7236dc6bf4c1`): the migration inserts any missing `(source, board_token)` companies itself (placeholder `name` = `board_token`, overwritten by the seed), and names the FK explicitly since there's no naming convention
 - [ ] Job data-model fixes (moved here from the old Deferred section, reasoning preserved):
   - Company display name comes from the `companies` row, not `board_token` (an ATS slug, not guaranteed presentable). Confirmed live that Greenhouse returns `company_name` per posting, so seed names can be checked against it
   - `posted_at` column from the ATS's own publish date (Greenhouse `first_published`; find the Ashby/Lever equivalents). Safe to overwrite on every re-poll, same as `title`/`description`
   - Rename `fetched_at` → `last_synced_at` (same overwrite-every-poll behavior, named honestly). Stage 4 relies on it for delisting
   - `location` (and a remote flag if the ATS exposes one) — look at real payloads first; all three ATS's shape this differently
   - Default `GET /jobs` ordering `posted_at DESC` in `list_jobs`'s `ORDER BY`, not alphabetical
-- [ ] `jobsentinel/ingestion/` package: move `job_text.py` (`normalized_job` etc.) and `positions.py` in from `scripts/`, plus one fetch function per ATS behind a common signature, e.g. `fetch_board(company) -> list[NormalizedJob]` **(design exercise — the adapter interface)**. `scripts/explore_*.py` and `load_jobs.py` import from the package afterwards instead of the reverse
-- [ ] Seed list: ~10–20 real companies spread across all three ATS's, as a checked-in data file loaded by a seed command (not hardcoded in code), idempotent to re-run
-- [ ] `load_jobs.py` → loads every seeded company. One company failing (bad token, timeout) must log and continue, not abort the run. This is the first taste of Stage 4's per-company failure isolation
+- [x] `jobsentinel/ingestion/` package: move `job_text.py` (`normalized_job` etc.) and `positions.py` in from `scripts/`, plus one fetch function per ATS behind a common signature, e.g. `fetch_board(company) -> list[NormalizedJob]` **(design exercise — the adapter interface)**. `scripts/explore_*.py` and `load_jobs.py` import from the package afterwards instead of the reverse. Built as `jobsentinel/ingestion/jobs/{greenhouse,ashby,lever}_api.py`, each `fetch_jobs(board_token) -> list[dict]`, sharing one HTTP helper (`http.py`); the loader picks one via a `source -> fetch_jobs` dict
+- [x] Seed list: ~10–20 real companies spread across all three ATS's, as a checked-in data file loaded by a seed command (not hardcoded in code), idempotent to re-run. Built as `jobsentinel/ingestion/companies/seed_companies.csv` + `python -m jobsentinel.ingestion.companies.seed_companies` (upserts by `(source, board_token)`)
+- [x] `load_jobs.py` → loads every seeded company. One company failing (bad token, timeout) must log and continue, not abort the run. This is the first taste of Stage 4's per-company failure isolation. Built as `python -m jobsentinel.ingestion.jobs.load_jobs`: one company at a time, each written by `upsert_jobs` (batched multi-row `INSERT ... ON CONFLICT`, one transaction per company). First run: 7,047 jobs from 21/21 companies
 - [ ] API: `JobSummary`/`JobDetail` gain `company`, `posted_at`, `location`; `GET /companies` (public, list) for the frontend's filters
 - [ ] Frontend: company column + company filter on the jobs table; "Last synced" column becomes "Posted"; company name in the job detail header instead of `board_token`
 - [ ] Re-check the Slice 4 eval harness with a couple of non-Anthropic postings (Slice 4 noted cross-company differences were never exercised). Posting styles/lengths vary a lot by ATS
@@ -351,3 +352,9 @@ Nothing here is needed for the core loop. Pick by interest and learning value on
 - **Save/track/analytics**: application status per job, simple funnel stats.
 - **Streaming replies**: only if non-negotiable. Move the API to App Runner per `CLAUDE.md`'s known tradeoff; no workarounds on Lambda+Mangum.
 - **Eval harness growth**: a real strong/good-match fixture (never exercised, see Slice 4), plus Job Agent evals (does it ask before drafting, does it ever invent facts).
+
+## Extreme stretch
+
+Only once everything above is worth doing and done.
+
+- **Company catalog from Common Crawl**: build a catalog of `(ats, slug, display_name)` from Common Crawl's URL index (`boards.greenhouse.io`, `job-boards.greenhouse.io`, `jobs.lever.co`, `jobs.ashbyhq.com`, plus their EU hosts), validated against each ATS's public API. It would power autocomplete and instant resolution in Slice 11 instead of live probing alone. A one-crawl Ashby spike (`scratch/ashby_cc.py`, run against the free CDX index server) found 1,333 slugs, with 23 of 25 sampled boards live, but missed Linear. So coverage needs several crawls unioned, and live probing stays as the fallback. A real build would use **Athena over the columnar index** (`s3://commoncrawl/cc-index/table/cc-main/warc/`, us-east-1; always filter on the `crawl`/`subset` partitions to keep scan cost low) as a monthly batch job. Open problems: display names (Lever and Ashby APIs don't return one), slugs that don't match the company name, and stale boards. Only worth it if Slice 11's miss logs show live probing isn't good enough.

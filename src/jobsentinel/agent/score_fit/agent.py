@@ -8,16 +8,16 @@ Strands agent + tools, its own container"). jobsentinel.agent.job_agent.agent
 is the other one; they don't share a runtime or an entrypoint.
 
 Run locally without deploying (one-shot, no server):
-    uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 182, "user_id": "user_2abc123"}'
-    uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 182, "user_id": "user_2abc123", "profile_id": 3}'
+    uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 199, "user_id": "user_2abc123"}'
+    uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 199, "user_id": "user_2abc123", "profile_id": 3}'
 
 Run the local AgentCore dev server (same ASGI app AgentCore Runtime runs in
 prod, just on your machine):
     uv run python -m jobsentinel.agent.score_fit.agent
-    # then: curl -X POST http://localhost:8080/invocations -d '{"job_id": 182, "user_id": "user_2abc123"}'
+    # then: curl -X POST http://localhost:8080/invocations -d '{"job_id": 199, "user_id": "user_2abc123"}'
 
 Deploy for real: `agentcore configure --entrypoint src/jobsentinel/agent/score_fit/agent.py`,
-then `agentcore launch`. Invoke the deployed agent: `agentcore invoke '{"job_id": 182, "user_id": "user_2abc123"}'`.
+then `agentcore launch`. Invoke the deployed agent: `agentcore invoke '{"job_id": 199, "user_id": "user_2abc123"}'`.
 
 `user_id` (a Clerk ID) is a plain payload field, not anything this module
 verifies itself - the API layer's jobsentinel.api.auth.get_current_user_id
