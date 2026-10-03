@@ -13,6 +13,7 @@ The company slug is what appears in jobs.lever.co/<company>.
 """
 
 import logging
+from datetime import datetime, timezone
 
 from jobsentinel.ingestion.jobs.http import get_board_json
 from jobsentinel.ingestion.jobs.job_text import html_to_text, normalized_job
@@ -71,7 +72,17 @@ def fetch_jobs(company: str) -> list[dict]:
                 title=job.get("text", ""),
                 description=description,
                 url=job.get("hostedUrl"),
+                # Epoch milliseconds, not an ISO string.
+                posted_at=datetime.fromtimestamp(job["createdAt"] / 1000, tz=timezone.utc) if job.get("createdAt") else None,
+                location=_location(job),
+                workplace_type=job.get("workplaceType"),
                 raw=job,
             )
         )
     return jobs
+
+
+def _location(job: dict) -> str | None:
+    categories = job.get("categories") or {}
+    names = categories.get("allLocations") or [categories.get("location")]
+    return "; ".join(n for n in names if n) or None

@@ -11,6 +11,7 @@ jobs.ashbyhq.com/ramp the token is "ramp".
 """
 
 import logging
+from datetime import datetime
 
 from jobsentinel.ingestion.jobs.http import get_board_json
 from jobsentinel.ingestion.jobs.job_text import html_to_text, normalized_job
@@ -38,7 +39,17 @@ def fetch_jobs(board_token: str) -> list[dict]:
                 title=job["title"],
                 description=html_to_text(description),
                 url=job.get("jobUrl"),
+                posted_at=datetime.fromisoformat(job["publishedAt"]) if job.get("publishedAt") else None,
+                location=_location(job),
+                workplace_type=job.get("workplaceType"),
                 raw=job,
             )
         )
     return jobs
+
+
+def _location(job: dict) -> str | None:
+    """Primary location plus any secondaries, e.g.
+    "New York, NY (HQ); Remote (US); Miami, FL"."""
+    names = [job.get("location")] + [loc.get("location") for loc in job.get("secondaryLocations") or []]
+    return "; ".join(n for n in names if n) or None

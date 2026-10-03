@@ -67,6 +67,19 @@ def clean_whitespace(text: str | None) -> str:
     return text.strip()
 
 
+WORKPLACE_TYPES = {"remote", "hybrid", "onsite"}
+
+
+def normalize_workplace_type(value: str | None) -> str | None:
+    """Map each ATS's spelling ("OnSite", "on-site", "Remote") onto one of
+    WORKPLACE_TYPES, or None if it's missing or something we don't know
+    (Lever's "unspecified", say) - unknown means unknown, not a guess."""
+    if not value:
+        return None
+    key = re.sub(r"[^a-z]", "", value.lower())
+    return key if key in WORKPLACE_TYPES else None
+
+
 def normalized_job(
     *,
     ats_job_id: str,
@@ -75,9 +88,17 @@ def normalized_job(
     title: str,
     description: str,
     url: str | None,
+    posted_at: datetime | None,
+    location: str | None,
+    workplace_type: str | None,
     raw: dict,
 ) -> dict:
-    """Build the one job shape shared by all three ATS scripts.
+    """Build the one job shape shared by all three ATS adapters.
+
+    `posted_at` must be timezone-aware (each adapter parses its ATS's own
+    date format - ISO strings for Greenhouse/Ashby, epoch millis for
+    Lever). `workplace_type` goes through normalize_workplace_type here so
+    adapters can pass the raw ATS value.
 
     `raw` should be the untouched API payload for this posting (not a
     mutated copy) - it's kept in full precisely because the schema isn't
@@ -88,10 +109,15 @@ def normalized_job(
         "ats_job_id": str(ats_job_id),
         "source": source,
         "board_token": board_token,
-        "title": title,
+        # Some boards pad titles (" Security Engineer, Cloud") - that would
+        # break sorting and exact-match filters downstream.
+        "title": title.strip(),
         "description": clean_whitespace(description) or "Unable to parse description",
         "url": url,
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "posted_at": posted_at,
+        "location": (location or "").strip() or None,
+        "workplace_type": normalize_workplace_type(workplace_type),
+        "last_synced_at": datetime.now(timezone.utc),
         "raw_json": raw,
     }
 

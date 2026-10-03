@@ -5,6 +5,7 @@ boards.greenhouse.io/anthropic the token is "anthropic".
 """
 
 import logging
+from datetime import datetime
 
 from jobsentinel.ingestion.jobs.http import get_board_json
 from jobsentinel.ingestion.jobs.job_text import html_to_text, normalized_job
@@ -36,7 +37,27 @@ def fetch_jobs(board_token: str) -> list[dict]:
                 title=job["title"],
                 description=html_to_text(content),
                 url=job.get("absolute_url"),
+                posted_at=_parse_date(job.get("first_published")),
+                location=(job.get("location") or {}).get("name"),
+                workplace_type=_workplace_type(job),
                 raw=job,
             )
         )
     return jobs
+
+
+def _parse_date(value: str | None) -> datetime | None:
+    # ISO 8601 with offset, e.g. "2024-12-20T13:53:38-05:00".
+    return datetime.fromisoformat(value) if value else None
+
+
+def _workplace_type(job: dict) -> str | None:
+    """Greenhouse has no standard workplace field. Some boards add a
+    custom "Location Type" metadata entry; otherwise the only signal is
+    "Remote" in the location text. Anything else stays unknown (None) -
+    a location like "San Francisco, CA" doesn't prove on-site."""
+    for meta in job.get("metadata") or []:
+        if (meta.get("name") or "").lower() in ("location type", "workplace type") and isinstance(meta.get("value"), str):
+            return meta["value"]
+    location = ((job.get("location") or {}).get("name") or "").lower()
+    return "remote" if "remote" in location else None
