@@ -7,11 +7,11 @@ Same conventions as jobsentinel.db.jobs: callers pass in an Engine, and get
 back plain dicts (or ids), never live ORM objects.
 """
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from jobsentinel.db.models import Company
+from jobsentinel.db.models import Company, Job
 
 
 def upsert_company(engine: Engine, name: str, source: str, board_token: str) -> int:
@@ -62,6 +62,50 @@ def list_companies(engine: Engine) -> list[dict]:
     stmt = select(Company).order_by(Company.id)
     with Session(engine) as session:
         return [_to_dict(c) for c in session.scalars(stmt)]
+
+
+def list_companies_with_job_counts(engine: Engine) -> list[dict]:
+    """Every company plus how many jobs it has loaded (`job_count`),
+    ordered by id - what GET /companies returns for the Companies page.
+
+    Counted live on every call rather than stored in a `companies.job_count`
+    column: a stored counter is a second copy of a fact that can drift from
+    `jobs` (a loader crash mid-board, a manual delete, delisting logic that
+    forgets to decrement). Counting from the source can't go stale, and at
+    ~20 companies / ~7k jobs it's milliseconds - denormalize only once a
+    measurement says this is slow.
+
+    Separate from list_companies() because the poller/seed script don't
+    need the aggregate, so they shouldn't pay for the join.
+
+    Three details that make the count right:
+    - OUTER join, not inner: a company with zero jobs (just seeded, board
+      not loaded yet) would vanish from an inner join. Outer keeps it.
+    - count(Job.id), not count(*): for a zero-job company the outer join
+      yields one row with every jobs column NULL. count(*) counts that row
+      (-> 1); count(Job.id) skips NULLs (-> 0).
+    - GROUP BY Company.id alone is enough: it's the primary key, so
+      Postgres knows the other companies columns are determined by it.
+
+    Slice 10 note: once delisting marks jobs closed, the "open jobs only"
+    condition belongs in the JOIN's ON clause, not a WHERE - filtering
+    jobs columns in WHERE discards the NULL rows and silently turns this
+    back into an inner join.
+    """
+    stmt = (
+        select(
+            Company.id,
+            Company.name,
+            Company.source,
+            Company.board_token,
+            func.count(Job.id).label("job_count"),
+        )
+        .outerjoin(Job, Job.company_id == Company.id)
+        .group_by(Company.id)
+        .order_by(Company.id)
+    )
+    with Session(engine) as session:
+        return [dict(row._mapping) for row in session.execute(stmt)]
 
 
 def _to_dict(company: Company) -> dict:

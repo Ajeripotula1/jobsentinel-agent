@@ -29,17 +29,19 @@ def test_list_all_companies(monkeypatch):
         "name": "Anthropic",
         "source": "greenhouse",
         "board_token": "anthropic",
-        "created_at": "2026-10-02T00:00:00Z",
+        "job_count": 640,
     }
     monkeypatch.setattr(
-        "jobsentinel.api.routers.companies.list_companies", lambda engine: [fake_company]
+        "jobsentinel.api.routers.companies.list_companies_with_job_counts",
+        lambda engine: [fake_company],
     )
 
     response = client.get("/companies")
 
     assert response.status_code == 200
     assert response.json() == [
-        {"id": 1, "name": "Anthropic", "source": "greenhouse", "board_token": "anthropic"}
+        {"id": 1, "name": "Anthropic", "source": "greenhouse", "board_token": "anthropic",
+         "job_count": 640}
     ]
 
 

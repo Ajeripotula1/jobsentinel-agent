@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from jobsentinel.api.auth import get_current_user_id
-from jobsentinel.db.companies import list_companies
+from jobsentinel.db.companies import list_companies_with_job_counts
 from jobsentinel.db.engine import get_engine
 from jobsentinel.db.user_companies import (
     follow_company,
@@ -42,15 +42,24 @@ class CompanySummary(BaseModel):
     board_token: str
 
 
+class CompanyWithJobCount(CompanySummary):
+    # Jobs currently loaded for this company - counted live, see
+    # db.companies.list_companies_with_job_counts.
+    job_count: int
+
+
 class FollowedCompany(CompanySummary):
     # When this user followed it - not when the company row was seeded.
     followed_at: datetime
 
 
-@router.get("", response_model=list[CompanySummary])
-def list_all_companies() -> list[CompanySummary]:
-    """Every company in the companies table, ordered by id."""
-    return [CompanySummary(**company) for company in list_companies(get_engine())]
+@router.get("", response_model=list[CompanyWithJobCount])
+def list_all_companies() -> list[CompanyWithJobCount]:
+    """Every company in the companies table with its job count, ordered by id."""
+    return [
+        CompanyWithJobCount(**company)
+        for company in list_companies_with_job_counts(get_engine())
+    ]
 
 
 @router.get("/following", response_model=list[FollowedCompany])

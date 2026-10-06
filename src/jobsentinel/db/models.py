@@ -53,8 +53,10 @@ class Job(Base):
     source: Mapped[str] = mapped_column(Text)
     # The company's board token/slug on that ATS 
     board_token: Mapped[str] = mapped_column(Text)
-    # FK map job to specific company
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    # FK map job to specific company. Indexed: Postgres does NOT auto-index
+    # foreign key columns (only the referenced PK side), and both the
+    # per-company job count (GET /companies) and Slice 9b's feed join on it.
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
     # Job title/position (SWE, AI Eng, etc)
     title: Mapped[str] = mapped_column(Text)
     # The cleaned, human/LLM-readable posting text jobsentinel.ingestion.jobs.job_text

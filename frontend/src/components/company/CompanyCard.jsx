@@ -14,7 +14,7 @@ export const CompanyCard = ({ company, isFollowing, toggleFollow, isPending, isS
                 <div className='flex gap-3 items-center'>
                     <Badge>{company.source}</Badge>
                     <span>-</span>
-                    <span> Some number jobs</span>
+                    <span>{company.job_count} {company.job_count === 1 ? 'job' : 'jobs'}</span>
                 </div>
                 {/* `=== false`, not `!isSignedIn`: Clerk's isSignedIn is
                     `undefined` until it has loaded, and treating that as
