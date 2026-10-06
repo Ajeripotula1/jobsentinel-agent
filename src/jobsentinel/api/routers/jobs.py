@@ -50,13 +50,21 @@ class JobSummary(BaseModel):
     id: int
     title: str
     source: str
-    board_token: str
+    company_id: int
+    # Display name from the companies table (see db.jobs.list_jobs's join).
+    company: str
     url: str | None
-    fetched_at: datetime
+    # None when the ATS didn't send a publish date.
+    posted_at: datetime | None
+    location: str | None
+    # "remote" | "hybrid" | "onsite" | None - see job_text.normalize_workplace_type.
+    workplace_type: str | None
+    last_synced_at: datetime
 
 
 class JobDetail(JobSummary):
     ats_job_id: str
+    board_token: str
     description: str
 
 

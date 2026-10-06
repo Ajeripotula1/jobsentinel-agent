@@ -20,7 +20,7 @@ Then, e.g.:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from jobsentinel.api.routers import jobs, profile
+from jobsentinel.api.routers import companies, jobs, profile
 from jobsentinel.config import get_settings
 app = FastAPI(title="JobSentinel API")
 
@@ -36,6 +36,7 @@ app.add_middleware(
 
 app.include_router(profile.router)
 app.include_router(jobs.router)
+app.include_router(companies.router)
 
 @app.get("/health")
 def health() -> dict:

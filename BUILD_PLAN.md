@@ -56,8 +56,8 @@ The slices below are grouped into **stages**. Each stage ends at a product miles
 | Stage | Milestone ("done" means…) | Slices | Status |
 |---|---|---|---|
 | **1. MVP** | One user can upload a resume, browse jobs, score fit, and work with the Job Agent in a real browser, locally | 0–7 | ✅ Built. Only Slice 7's real-browser walkthrough remains |
-| **2. Multi-company** | Jobs from many companies across Greenhouse, Ashby and Lever, loaded through shared ingestion code in the package (not `scripts/`) | 8 | ⬜ Next |
-| **3. Personalized feed** | Users follow companies, set target roles/location, and see a focused feed of only their jobs | 9 | ⬜ |
+| **2. Multi-company** | Jobs from many companies across Greenhouse, Ashby and Lever, loaded through shared ingestion code in the package (not `scripts/`) | 8 | ✅ Built. Browser check pending |
+| **3. Personalized feed** | Users follow companies, set target roles, and see a focused feed of only their jobs | 9 | ⬜ Next |
 | **4. Polling** | Boards refresh on a schedule on their own; new and closed postings are detected and surfaced | 10 | ⬜ |
 | **5. Custom companies** | Users can follow a company outside the seed list; its board token is resolved automatically | 11 | ⬜ |
 | **6. Ready for deployment → deployed** | Per-user cost limits, then everything running on AWS at the ~$2–6/mo idle target | 12–13 | ⬜ |
@@ -243,36 +243,197 @@ Goal: jobs from a seeded list of companies across all three ATS's, stored with a
 *Teaches:* normalizing several similar-but-different external APIs behind one interface (adapter pattern), foreign keys and data migrations on a table that already has rows, moving exploration code into production code without breaking the scripts that still use it.
 
 - [x] `companies` table: `id`, `name` (display name), `source` (`greenhouse`/`ashby`/`lever`), `board_token`, `created_at`, `UNIQUE (source, board_token)`. Global, not per-user: a company is shared data, following it is per-user (Slice 9) **(design exercise — the schema)**
-- [x] `jobs.company_id` FK → `companies.id`. Data migration: create the Anthropic company row and backfill the existing jobs (640 by then) to it before making the column `NOT NULL`. Done as expand → backfill → contract in one migration (`7236dc6bf4c1`): the migration inserts any missing `(source, board_token)` companies itself (placeholder `name` = `board_token`, overwritten by the seed), and names the FK explicitly since there's no naming convention
-- [ ] Job data-model fixes (moved here from the old Deferred section, reasoning preserved):
+- [x] `jobs.company_id` FK → `companies.id`. Data migration: create the Anthropic company row and backfill the existing jobs (640 by then) to it before making the column `NOT NULL`. Done as expand → backfill → contract in one migration (`7236dc6bf4c1`): the migration inserts any missing `(source, board_token)` companies itself (placeholder `name` = `board_token`, overwritten by the seed), and names the FK explicitly (a `naming_convention` on `Base.metadata` was added afterwards, so future constraints get predictable names; it must restate the default `ix` key, or existing indexes lose their names)
+- [x] Job data-model fixes (moved here from the old Deferred section, reasoning preserved):
   - Company display name comes from the `companies` row, not `board_token` (an ATS slug, not guaranteed presentable). Confirmed live that Greenhouse returns `company_name` per posting, so seed names can be checked against it
   - `posted_at` column from the ATS's own publish date (Greenhouse `first_published`; find the Ashby/Lever equivalents). Safe to overwrite on every re-poll, same as `title`/`description`
   - Rename `fetched_at` → `last_synced_at` (same overwrite-every-poll behavior, named honestly). Stage 4 relies on it for delisting
   - `location` (and a remote flag if the ATS exposes one) — look at real payloads first; all three ATS's shape this differently
   - Default `GET /jobs` ordering `posted_at DESC` in `list_jobs`'s `ORDER BY`, not alphabetical
+  - *Built (migration `00f1e70971b1`):* `posted_at` (nullable timestamptz: Greenhouse `first_published`, Ashby `publishedAt`, Lever `createdAt` in epoch ms), `location` (nullable text, the ATS's own display string; Ashby/Lever multi-location joined with `; `), `workplace_type` (`remote`/`hybrid`/`onsite`/NULL: Ashby and Lever expose it directly; Greenhouse only via an optional "Location Type" metadata field or "remote" in the location text, so ~60% of Greenhouse rows are NULL, i.e. unknown rather than guessed). Autogenerate rendered the rename as drop + add, which would have deleted every timestamp; hand-edited to `alter_column(new_column_name=...)`. New columns are filled by re-running the loader, not a SQL backfill, so extraction logic lives in one place (the adapters). Titles are now `strip()`ed (400+ had padding). `list_jobs` orders `posted_at DESC NULLS LAST, id`, and joins `companies` once for the display name
 - [x] `jobsentinel/ingestion/` package: move `job_text.py` (`normalized_job` etc.) and `positions.py` in from `scripts/`, plus one fetch function per ATS behind a common signature, e.g. `fetch_board(company) -> list[NormalizedJob]` **(design exercise — the adapter interface)**. `scripts/explore_*.py` and `load_jobs.py` import from the package afterwards instead of the reverse. Built as `jobsentinel/ingestion/jobs/{greenhouse,ashby,lever}_api.py`, each `fetch_jobs(board_token) -> list[dict]`, sharing one HTTP helper (`http.py`); the loader picks one via a `source -> fetch_jobs` dict
 - [x] Seed list: ~10–20 real companies spread across all three ATS's, as a checked-in data file loaded by a seed command (not hardcoded in code), idempotent to re-run. Built as `jobsentinel/ingestion/companies/seed_companies.csv` + `python -m jobsentinel.ingestion.companies.seed_companies` (upserts by `(source, board_token)`)
 - [x] `load_jobs.py` → loads every seeded company. One company failing (bad token, timeout) must log and continue, not abort the run. This is the first taste of Stage 4's per-company failure isolation. Built as `python -m jobsentinel.ingestion.jobs.load_jobs`: one company at a time, each written by `upsert_jobs` (batched multi-row `INSERT ... ON CONFLICT`, one transaction per company). First run: 7,047 jobs from 21/21 companies
-- [ ] API: `JobSummary`/`JobDetail` gain `company`, `posted_at`, `location`; `GET /companies` (public, list) for the frontend's filters
-- [ ] Frontend: company column + company filter on the jobs table; "Last synced" column becomes "Posted"; company name in the job detail header instead of `board_token`
-- [ ] Re-check the Slice 4 eval harness with a couple of non-Anthropic postings (Slice 4 noted cross-company differences were never exercised). Posting styles/lengths vary a lot by ATS
-- [ ] Row count check: if the total job count is now in the thousands, the client-side-only filter from Slice 7 is the thing to revisit in Slice 9, not here
+- [x] API: `JobSummary`/`JobDetail` gain `company`, `posted_at`, `location`; `GET /companies` (public, list) for the frontend's filters. Also `company_id`, `workplace_type`, `last_synced_at`; `board_token` moved to `JobDetail` only. The agents' `get_job_info` tool now also returns company/location/workplace type, since those aren't reliably in the description text
+- [x] Frontend: company column + company filter on the jobs table; "Last synced" column becomes "Posted"; company name in the job detail header instead of `board_token`. Filter options come from `GET /companies` (native `<select>`); the detail header also shows location and workplace type; `formatDate` renders `—` for a null date. Lint + build pass. **Not yet walked in a real browser** — fold into Slice 7's walkthrough
+- [x] Re-check the Slice 4 eval harness with a couple of non-Anthropic postings (Slice 4 noted cross-company differences were never exercised). Posting styles/lengths vary a lot by ATS
+  - Fixtures are now keyed by `(source, ats_job_id)`: the original `jobs.id` fixtures had all drifted onto unrelated postings after a board reload (same cause as the 182 → 199 test-job move). Added Cursor (Ashby, a ~400-char posting) and Binance (Lever, description stitched from `lists` sections)
+  - Result (2026-10-02, one profile): all 7 runs completed, all tool-call assertions OK. Cross-ATS input is fine: the stitched Lever posting was read as one coherent posting (it found the Mandarin requirement buried in a section), and the short Cursor posting got `posting_underspecified` gaps instead of invented requirements
+  - Calibration issues worth a Stage 7 eval pass, not fixed here: (1) the same requirement sometimes appears as both a strength and a gap (FDE: "production LLM experience"; Binance: "Node.js", with Python evidence offered as the strength); (2) an unmet years-of-experience minimum is `contradicts` in some runs and `not_mentioned` in others; (3) `good_match` on the 400-char Cursor posting is generous given how little it says
+
+- [x] Row count check: if the total job count is now in the thousands, the client-side-only filter from Slice 7 is the thing to revisit in Slice 9, not here. **Measured: 7,140 jobs, `GET /jobs` = 2.4 MB uncompressed (no gzip), ~0.15 s server-side locally**, and the table renders every row. Slice 9's server-side feed is the fix; until then, `GZipMiddleware` is a one-line stopgap if it's noticeably slow
 
 # Stage 3 — Personalized feed
 
 ## Slice 9 — Follow companies, target roles, and "my jobs"
 
-Goal: a signed-in user follows companies, says which roles (and optionally locations) they want, and gets a focused feed of only matching jobs. The public all-jobs list stays for signed-out browsing.
+Goal: a signed-in user follows companies, says which roles they want, and gets a focused feed of only matching jobs. The public all-jobs list stays for signed-out browsing.
 
 *Teaches:* many-to-many relationships (users ↔ companies), per-user row scoping on shared data, when filtering moves from client to server (user-driven filters over a growing dataset), reusing deterministic matching (`positions.py`) instead of reaching for embeddings.
 
-- [ ] `user_companies` table (`user_id`, `company_id`, `created_at`, PK on both) **(design exercise)**
-- [ ] `user_preferences`: target positions (keys from `CANONICAL_POSITIONS`), optional locations / remote-ok. One row per user, or JSONB on a table; decide and note why **(design exercise)**
-- [ ] `POST /companies/{id}/follow`, `DELETE /companies/{id}/follow`, `GET /me/companies`; `GET/PUT /me/preferences`. All auth-required, all scoped by `get_current_user_id`
-- [ ] `GET /jobs/feed` (auth): jobs from followed companies, filtered by target positions via `positions.py`'s title matching and by location. Server-side filtering: this is now per-user data over thousands of rows, which is exactly the case Slice 7's "stays client-side" decision said would change **(design exercise — the query and where matching runs: SQL vs. Python)**
-- [ ] Frontend: a "Companies" page (browse seeded companies, follow/unfollow), a preferences form (role multi-select, location), and a "My jobs" view as the signed-in default, with the all-jobs list still reachable
-- [ ] Empty states that teach the flow: no follows → "follow some companies"; follows but no preferences → prompt to pick roles; zero matches → suggest widening roles
-- [ ] New-user onboarding path: sign up → upload resume → follow companies → pick roles → feed. Walk it in the browser
+**Scope change (2026-10-04):** location / remote-ok preferences and a per-company "View jobs" button on the Companies page moved to Stage 7. The feed filters by followed companies and target roles only.
+
+**Build order.** The slice is split into four features, 9a–9d. Each one goes through the whole stack (DB → API → frontend) and ends with a check in the browser before the next starts. Each has a wireframe as its visual target. The order is chosen so something visible works as early as possible. The feed (9b) comes before roles (9c) and starts as "every job from companies I follow". Roles then add a filter to a feed that already exists, so you're not building the feed and its filtering at the same time.
+
+### Target site map (after 9d)
+
+```
+/                     HomePage            [CHG]  signed-in users go to /feed (9d)
+/sign-in, /sign-up    Clerk               [SAME]
+/feed                 MyJobsPage          [NEW]  auth; the signed-in default (9b)
+/jobs                 JobListPage         [SAME] public all-jobs list, still reachable
+/jobs/:jobId          JobDetailPage       [SAME]
+/companies            CompaniesPage       [NEW]  public to browse, auth to follow (9a)
+/profile              ProfilePage         [CHG]  Resume tab + Job preferences tab (9c)
+```
+
+```
+Navbar, signed out:
++--------------------------------------------------------------------------+
+| JobSentinel   All jobs   Companies                    [Sign in] [Sign up] |
++--------------------------------------------------------------------------+
+
+Navbar, signed in:
++--------------------------------------------------------------------------+
+| JobSentinel   My jobs   All jobs   Companies   Profile             (o)   |
++--------------------------------------------------------------------------+
+               (9b)                  (9a)                        UserButton
+```
+
+---
+
+### 9a — Follow companies
+
+```
+/companies — CompaniesPage
++--------------------------------------------------------------------------+
+| Companies                                     [search companies...]      |
+| Following 6 of 21                                                         |
++--------------------------------------------------------------------------+
+| <CompanyCard/> grid                                                       |
+| +----------------------+ +----------------------+ +----------------------+|
+| | Anthropic            | | Cursor               | | Binance              ||
+| | Greenhouse · 640 jobs| | Ashby · 42 jobs      | | Lever · 310 jobs     ||
+| | [✓ Following]        | | [+ Follow]           | | [+ Follow]           ||
+| +----------------------+ +----------------------+ +----------------------+|
++--------------------------------------------------------------------------+
+   data:  GET /companies (exists) + GET /companies/following (which ones I follow)
+   click: PUT / DELETE /companies/{id}/follow
+   signed out: [+ Follow] -> /sign-in
+```
+
+- [x] DB: `user_companies` table (`user_id`, `company_id` FK, `created_at`, PK on `(user_id, company_id)`) + migration **(design exercise)**. Think about: what happens on a duplicate follow, and whether `ON DELETE CASCADE` on the company FK is right. **Done:** junction table (one row per follow, not an `int[]` per user - FKs can't cover array elements); `ON DELETE CASCADE`; separate index on `company_id` for the reverse "who follows Y?" lookup the poller will need
+- [x] DB access: `follow_company` / `unfollow_company` / `list_followed_company_ids` in `jobsentinel/db/`. Following twice and unfollowing something not followed should both be harmless (idempotent). **Done** in `db/user_companies.py`, plus `list_followed_companies` (joined details + `followed_at`). Follow is `ON CONFLICT DO NOTHING ... RETURNING` - `rowcount` reads `-1` for that INSERT on psycopg
+- [x] API: `PUT /companies/{id}/follow`, `DELETE /companies/{id}/follow`, `GET /companies/following`. All require auth and are scoped by `get_current_user_id`; 404 on an unknown company id. Tests cover: follow, double-follow, unfollow, user A can't see user B's follows. **Changed from plan (2026-10-05):** PUT instead of POST (follow is idempotent, which PUT promises and POST doesn't); `/companies/following` instead of `/me/companies` (lives in the companies router). Both return 204; unknown company id is detected by catching the FK violation, not a SELECT-first check
+- [ ] API: per-company job count on `GET /companies` (for the card's "640 jobs"). Optional; drop it if the query gets awkward
+- [x] Frontend: `useFollowedCompanies` + `useFollowCompany`/`useUnfollowCompany` hooks; `CompaniesPage` with `CompanyCard` grid, name search, a "Following N of M" count, and a navbar link. **Convention from here on:** per-user query keys include the Clerk `userId` (`followedCompanies(userId)`, `enabled: !!userId`); pre-9a keys left as-is
+- [ ] Try an **optimistic update** on the follow toggle (React Query `onMutate` + rollback in `onError`) **(design exercise)** - mutations currently invalidate-and-refetch, and a failed follow gives no user-facing feedback yet
+- [ ] **Verify in browser:** follow 3 companies, refresh, still followed; unfollow one, refresh, gone; signed out, Follow sends you to sign-in. Check the `user_companies` rows in psql match
+
+### 9b — My jobs feed (followed companies only)
+
+```
+/feed — MyJobsPage
++--------------------------------------------------------------------------+
+| My jobs                                                                  |
+| Following 6 companies                            [Edit companies]        |  <- FeedSummaryBar
++--------------------------------------------------------------------------+
+| [search title...]  [Company: followed only v]                            |  <- JobsTable, reused
+|--------------------------------------------------------------------------|
+| Title                     | Company   | Location      | Posted           |
+| Senior Software Engineer  | Anthropic | SF / Remote   | Oct 2            |
+| ML Engineer, Inference    | Cursor    | Remote        | Sep 30           |
++--------------------------------------------------------------------------+
+   data: GET /jobs/feed (server filters to followed companies)
+```
+
+- [ ] DB access: `list_feed_jobs(user_id)` — `jobs` joined to `user_companies` on the user, same ordering as `list_jobs` (`posted_at DESC NULLS LAST, id`)
+- [ ] API: `GET /jobs/feed` (auth) returning `JobSummary` rows. **Decide the response shape now** **(design exercise):** a bare list, or an envelope like `{jobs, followed_count, has_roles}` so 9d's empty states don't need three separate queries. Changing it later means changing every consumer, so pick before 9c
+- [ ] Frontend: refactor `JobsTable` to take its jobs (and loading/error state) as props, not call `useJobs()` itself, so `/jobs` and `/feed` share one table. `useFeed` hook; `MyJobsPage` with `FeedSummaryBar` ([Edit companies] → `/companies`); "My jobs" navbar link (signed in only)
+- [ ] **Verify in browser:** `/feed` shows only followed companies' jobs; follow a new company on `/companies`, go back, its jobs appear (check your query invalidation); `/jobs` still shows everything
+
+### 9c — Target roles (filter the feed)
+
+```
+/profile — ProfilePage, Job preferences tab
++--------------------------------------------------------------------------+
+| Profile                                                                  |
+| [ Resume ]  [ Job preferences ]                    <- tabs (ui/tabs.jsx) |
++--------------------------------------------------------------------------+
+| Resume tab:  ProfileUpload / ProfileView  (unchanged)                    |
+|--------------------------------------------------------------------------|
+| Job preferences tab:  <PreferencesForm/>                                 |
+|                                                                          |
+|   Target roles (pick at least 1)                                         |
+|   [x] Software Engineer   [x] AI Engineer   [ ] Data Engineer            |
+|   [ ] Computer Engineer   [ ] ...   (keys from CANONICAL_POSITIONS)      |
+|                                                                          |
+|                                            [Save preferences]            |
++--------------------------------------------------------------------------+
+   data: GET / PUT /me/preferences
+
+/feed — FeedSummaryBar gains the roles line:
+| Following 6 companies · Roles: Software Engineer, AI Engineer            |
+|                                          [Edit companies] [Edit roles]   |
+```
+
+- [ ] DB: `user_preferences` with target positions (keys from `CANONICAL_POSITIONS`). One row per user with an array/JSONB column, or a row per (user, position); decide and note why **(design exercise)**. Leave room for Stage 7's location fields without designing them now
+- [ ] API: `GET /me/preferences` (empty defaults rather than a 404 for a user who hasn't set any) and `PUT /me/preferences` (validates every key against `CANONICAL_POSITIONS`, 422 otherwise). Decide where the frontend gets the list of roles to show: hardcoded in the frontend (can drift from `positions.py`) or served by e.g. `GET /positions`
+- [ ] API: `GET /jobs/feed` also filters by target roles via `positions.py`'s title matching **(design exercise — where matching runs: SQL vs. Python).** Python reuses `filter_by_positions` as-is but fetches every followed job first; SQL filters in the DB but duplicates the alias logic. Measure with a heavy follower (e.g. all 21 companies) before deciding. No roles set = no role filter (feed shows all followed jobs)
+- [ ] Frontend: `usePreferences` / `useUpdatePreferences`; `PreferencesForm` in a new "Job preferences" tab on `/profile`; roles line + [Edit roles] on `FeedSummaryBar`. Saving invalidates the feed query
+- [ ] **Verify in browser:** pick Software Engineer, feed shrinks to matching titles; add AI Engineer, ML titles appear; refresh, selections persist; clear all roles, full followed feed returns
+
+### 9d — Empty states, landing, and the onboarding walk
+
+```
+/feed — <FeedEmptyState/>: only ONE shows, checked in this order
++--------------------------------------------------------------------------+
+|  - no resume       -> "Upload your resume to score jobs"   [Upload]      |  (existing alert)
+|  - no follows      -> "Follow some companies to build your feed"         |
+|                                                   [Browse companies]     |
+|  - no roles picked -> "Pick the roles you're looking for"  [Pick roles]  |
+|  - 0 matches       -> "No matches. Try adding more roles"  [Edit roles]  |
++--------------------------------------------------------------------------+
+```
+
+```
+New user:
+ HomePage --[Get started]--> /sign-up (Clerk)
+                                 |
+                                 v
+                              /feed  --(no resume)--> [Upload]
+                                                         |
+       +-------------------------------------------------+
+       v
+  /profile (Resume tab) --upload PDF--> ProfileView --"Next: follow companies"
+       |
+       v
+  /companies --follow 3-5--> [Done → see my jobs]
+       |
+       v
+  /feed --(no roles)--> [Pick roles]
+       |
+       v
+  /profile (Job preferences tab) --save--> back to /feed
+       |
+       v
+  /feed (populated) --click row--> /jobs/:id --> Score Fit --> Job Agent
+
+Returning user:
+ sign in --> /feed --> click job --> /jobs/:id --> Score / Agent
+               |  [Edit companies] --> /companies --> back to /feed
+               |  [Edit roles]     --> /profile (Job preferences) --> back to /feed
+               +-- navbar "All jobs" --> /jobs
+
+Signed out:
+ HomePage --[Browse jobs]--> /jobs --click--> /jobs/:id (Score Fit asks to sign in)
+          \--> /companies --[+ Follow]--> /sign-in
+```
+
+- [ ] Frontend: `FeedEmptyState` with the four cases above, in that order
+- [ ] Frontend: "next step" links that connect the onboarding path: ProfileView → `/companies`, CompaniesPage [Done → see my jobs] → `/feed`, preferences save → `/feed`
+- [ ] Frontend: signed-in landing. `/` redirects to `/feed` (or the HomePage CTA becomes "Go to my jobs"; pick one), and Clerk's post-sign-in redirect lands on `/feed`
+- [ ] **Verify in browser:** walk the full new-user path with a fresh Clerk account (sign up → upload resume → follow companies → pick roles → feed → score a job), hitting each empty state along the way. Then the returning-user path, then signed out
 
 # Stage 4 — Polling
 
@@ -346,6 +507,9 @@ Nothing here is needed for the core loop. Pick by interest and learning value on
 - **AgentCore Memory long-term tier + `record_answer`** (moved from Slice 5's unchecked items): cross-job user facts ("wants fast-paced startups"). Needs a memory/extraction strategy designed first. Short-term per-job memory already covers the MVP.
 - **Company research / web search tool**: a background grounding tool for Score Fit and the Job Agent, no dedicated UI. Possibly a nested agent-as-tool if it becomes multi-step (see scope decisions).
 - **Embeddings/pgvector matching** (Titan V2, 1024d): rank the feed by profile similarity instead of title aliases only.
+- **Location / remote preferences** (moved from Slice 9, 2026-10-04): optional target locations and a remote-ok flag in `user_preferences`, applied as a `/jobs/feed` filter and a field on the Job preferences tab. Needs a normalization decision first, since `location` is each ATS's free-text display string and `workplace_type` is NULL for ~60% of Greenhouse rows.
+- **Company jobs view** (moved from Slice 9, 2026-10-04): a "View jobs" button on each Companies-page card, next to Follow, that opens the existing jobs table filtered to just that company (e.g. `/jobs?company=<id>`, reusing `JobsTable` and its company filter).
+- **Follow from job detail** (2026-10-04): a [+ Follow] / [✓ Following] button next to the company name in the job detail header, so a company found while browsing the public `/jobs` list can be followed without going to `/companies`. Reuses Slice 9a's follow/unfollow endpoints and hooks; the only new work is reading follow state in `JobDetail` and sending signed-out users to sign-in.
 - **Notifications**: email digest of new matching jobs (the "polls daily and tells you" experience), built on Slice 10's `first_seen_at`.
 - **Mock Interview & Prep Agent**: standalone multi-turn agent.
 - **Conversational job-query agent** ("find me backend roles at startups that…").

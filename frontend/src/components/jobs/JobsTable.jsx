@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useJobs } from '@/hooks/useJobs'
+import { useCompanies } from '@/hooks/useCompanies'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -18,19 +19,28 @@ import { formatDate } from '@/lib/format'
 
 export const JobsTable = () => {
   const { data: jobs, isPending, isError, error } = useJobs()
+  const { data: companies } = useCompanies()
   const [filter, setFilter] = useState('')
-  // Client-side only - per BUILD_PLAN.md's Slice 7 design exercise, ~600
-  // rows from the one loaded board is small enough to filter in-browser;
-  // no backend pagination/filtering exists yet (that's deferred until real
-  // multi-company following makes the row count actually large). useMemo
-  // just avoids re-filtering on renders that touch neither `jobs` nor
-  // `filter` (e.g. once there's sort state too).
+  // '' = all companies; otherwise a company id as a string (a <select>'s
+  // value is always a string - compared against String(job.company_id)).
+  const [companyId, setCompanyId] = useState('')
+  // Client-side only - per BUILD_PLAN.md, server-side filtering arrives
+  // with Slice 9's per-user feed. useMemo just avoids re-filtering on
+  // renders that touch neither `jobs` nor the filters.
   const filteredJobs = useMemo(() => {
     if (!jobs) return []
     const needle = filter.trim().toLowerCase()
-    if (!needle) return jobs
-    return jobs.filter((job) => job.title.toLowerCase().includes(needle))
-  }, [jobs, filter])
+    return jobs.filter(
+      (job) =>
+        (!companyId || String(job.company_id) === companyId) &&
+        (!needle || job.title.toLowerCase().includes(needle))
+    )
+  }, [jobs, filter, companyId])
+
+  const sortedCompanies = useMemo(
+    () => (companies ? [...companies].sort((a, b) => a.name.localeCompare(b.name)) : []),
+    [companies]
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -43,12 +53,30 @@ export const JobsTable = () => {
         )}
       </div>
 
-      <Input
-        type="text"
-        placeholder="Search jobs by title..."
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-      />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          type="text"
+          placeholder="Search jobs by title..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        {/* Native <select>: one plain dropdown doesn't justify adding a
+            shadcn Select component. Classes mirror ui/input.jsx so the two
+            controls match. */}
+        <select
+          aria-label="Filter by company"
+          value={companyId}
+          onChange={(e) => setCompanyId(e.target.value)}
+          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 sm:w-56"
+        >
+          <option value="">All companies</option>
+          {sortedCompanies.map((company) => (
+            <option key={company.id} value={String(company.id)}>
+              {company.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {isError && ( <ErrorAlert error={error} title="Couldn't load jobs"/>)}
 
@@ -58,7 +86,7 @@ export const JobsTable = () => {
             <TableHead>Title</TableHead>
             <TableHead>Company</TableHead>
             <TableHead>Source</TableHead>
-            <TableHead>Last synced</TableHead>
+            <TableHead>Posted</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -74,7 +102,7 @@ export const JobsTable = () => {
           {!isPending && !isError && filteredJobs.length === 0 && (
             <TableRow>
               <TableCell colSpan={4} className="text-center text-muted-foreground">
-                {jobs && jobs.length === 0 ? 'No jobs loaded yet.' : `No jobs match "${filter}".`}
+                {jobs && jobs.length === 0 ? 'No jobs loaded yet.' : 'No jobs match these filters.'}
               </TableCell>
             </TableRow>
           )}
@@ -86,11 +114,11 @@ export const JobsTable = () => {
                   {job.title}
                 </Link>
               </TableCell>
-              <TableCell>{job.board_token}</TableCell>
+              <TableCell>{job.company}</TableCell>
               <TableCell>
                 <Badge variant="outline">{job.source}</Badge>
               </TableCell>
-              <TableCell className="text-muted-foreground">{formatDate(job.fetched_at)}</TableCell>
+              <TableCell className="text-muted-foreground">{formatDate(job.posted_at)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Backend MVP (BUILD_PLAN.md Slices 0-6): job data loaded, profile upload/extraction, a Score Fit agent, a Job Agent (interview/resume/cover-letter/fit-Q&A with AgentCore Memory short-term recall), and a `GET/POST /jobs` + `/jobs/{id}/score` + `/jobs/{id}/agent` API surface. Slice 7 frontend (`frontend/`, React + Vite + TanStack Query + shadcn, Clerk auth) is built per `UI.md`: job list, job detail with Score Fit + gated Job Agent chat, profile upload/view. Remaining for Slice 7: UI.md Step 6's hardening pass + real-browser walkthrough. That closes Stage 1 (MVP); next is Stage 2 (multi-company, Slice 8). See BUILD_PLAN.md's "Roadmap at a glance" for all stages.
+Backend MVP (BUILD_PLAN.md Slices 0-6): job data loaded, profile upload/extraction, a Score Fit agent, a Job Agent (interview/resume/cover-letter/fit-Q&A with AgentCore Memory short-term recall), and a `GET/POST /jobs` + `/jobs/{id}/score` + `/jobs/{id}/agent` API surface. Slice 7 frontend (`frontend/`, React + Vite + TanStack Query + shadcn, Clerk auth) is built per `UI.md`: job list, job detail with Score Fit + gated Job Agent chat, profile upload/view. Remaining for Slice 7: UI.md Step 6's hardening pass + real-browser walkthrough. Slice 8 (Stage 2, multi-company) is built: a `companies` table seeded from a CSV, `jobs.company_id`, Greenhouse/Ashby/Lever adapters in `jobsentinel/ingestion/`, and company/posted/location fields through the API and UI. Next is Stage 3 (Slice 9, personalized feed). See BUILD_PLAN.md's "Roadmap at a glance" for all stages.
 
 Commands in daily use:
 - `docker compose up -d postgres` — local Postgres+pgvector
@@ -12,6 +12,7 @@ Commands in daily use:
 - `uv run uvicorn jobsentinel.api.main:app --reload --port 8000` — run the API locally
 - `cd frontend && npm run dev` — run the UI on :5173 (needs `frontend/.env.local` with `VITE_API_BASE_URL` and `VITE_CLERK_PUBLISHABLE_KEY`)
 - `cd frontend && npm run lint && npm run build` — oxlint + production build check
+- `uv run python -m jobsentinel.ingestion.companies.seed_companies` then `uv run python -m jobsentinel.ingestion.jobs.load_jobs` — seed companies from the CSV, then fetch and upsert every company's board (both idempotent)
 - `uv run pytest -m "not integration"` — default test run (mocked DB/agent calls, no Postgres/Bedrock needed); drop the marker filter to include the real-Bedrock extraction test
 - `uv run python -m jobsentinel.agent.score_fit.agent '{"job_id": 199}'` / `jobsentinel.agent.job_agent.agent '{"job_id": 199, "message": "..."}'` — run either agent one-shot from the CLI, no server
 

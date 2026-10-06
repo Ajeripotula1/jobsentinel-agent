@@ -7,6 +7,7 @@ import { JobListPage } from './pages/JobListPage'
 import { JobDetailPage } from './pages/JobDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { CompaniesPage } from './pages/CompaniesPage'
 
 function App() {
   return (
@@ -31,6 +32,8 @@ function App() {
       {/* Pathless App Layout Wrapper for all pages */}
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
+        <Route path="companies" element={<CompaniesPage />} />
+
         <Route path="jobs" element={<JobListPage />} />
         <Route path="jobs/:jobId" element={<JobDetailPage />} />
         <Route

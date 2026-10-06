@@ -84,10 +84,10 @@ def build_tools(
     @tool
     def get_job_info() -> str:
         """
-        Retrieve this run's job posting - title and description.
+        Retrieve this run's job posting - title, company, location, and description.
 
         Returns:
-            job: Job title/description as a JSON str, or an error message
+            job: Job title/company/location/description as a JSON str, or an error message
             if the job no longer exists.
         """
         engine = get_engine()
@@ -101,7 +101,15 @@ def build_tools(
         if job is None:
             result = {"error": f"no job with id {job_id}"}
         else:
-            result = {"title": job.get("title"), "description": job.get("description")}
+            # Company and location aren't reliably in the description text
+            # itself, and both matter to fit (who's hiring, where).
+            result = {
+                "title": job.get("title"),
+                "company": job.get("company"),
+                "location": job.get("location"),
+                "workplace_type": job.get("workplace_type"),
+                "description": job.get("description"),
+            }
         log_tool_call(engine, run_id, "get_job_info", {}, result)
         return json.dumps(result)
 

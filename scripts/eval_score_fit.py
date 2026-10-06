@@ -4,21 +4,26 @@ prints results side by side, so calibration across postings is something you
 can eyeball in one run instead of piecing together from separate one-shot
 CLI calls.
 
-Fixtures below are picked from the Anthropic board already loaded by
-scripts/load_jobs.py (BUILD_PLAN's "different roles/companies" spread, minus
-company diversity - see the conversation that picked this default). Chosen
-to span match categories on purpose, not just "5 jobs that happen to be
-loaded" - a harness that only ever sees strong matches can't tell you
-whether the agent is properly critical:
-  - 422 Senior Software Engineer, Full-stack   - expect: fairly close stack match
-  - 427 Software Engineer, Business Technology - expect: weak match, real experience-gap (already
-                                                  spot-checked manually against job_id 427)
-  - 1   Account Executive, AI Native           - expect: not_a_match, different domain entirely -
-                                                  the sharpest hallucination test: does the agent invent
-                                                  transferable "sales" skills from a SWE profile?
-  - 484 Staff+ Software Engineer, Full-stack   - expect: weak/no match on seniority, not skills
-  - 176 Forward Deployed Engineer              - expect: ambiguous - ground truth here is genuinely
-                                                  unclear, good posting_underspecified calibration check
+Fixtures are keyed by (source, ats_job_id), not internal `jobs.id`: ids
+are only stable for as long as a row lives, and a board reload (which
+happened once - the original fixture ids all ended up pointing at
+unrelated postings) silently re-points them. The ATS's own id doesn't
+move. Chosen to span match categories on purpose, not just "jobs that
+happen to be loaded" - a harness that only ever sees strong matches can't
+tell you whether the agent is properly critical:
+  - Anthropic  Senior Software Engineer, Full-stack   - expect: fairly close stack match
+  - Anthropic  Software Engineer, Business Technology - expect: weak match, real experience gap
+  - Anthropic  Account Executive, AI Native           - expect: not_a_match, different domain entirely -
+                                                         the sharpest hallucination test: does the agent invent
+                                                         transferable "sales" skills from a SWE profile?
+  - Anthropic  Staff+ Software Engineer, Full-stack   - expect: weak/no match on seniority, not skills
+  - Anthropic  Forward Deployed Engineer              - expect: ambiguous - ground truth genuinely unclear,
+                                                         a posting_underspecified calibration check
+  Added in Slice 8 for cross-company/cross-ATS coverage:
+  - Cursor (Ashby)  Software Engineer, Generalist     - a ~400-character posting: does the agent say it's
+                                                         underspecified instead of inventing requirements?
+  - Binance (Lever) Full Stack Engineer (Frontend Oriented) - a Lever description stitched together from
+                                                         `lists` sections: is it read as one coherent posting?
 
 Usage:
     uv run python scripts/eval_score_fit.py --user-id user_2abc123
@@ -33,9 +38,26 @@ from jobsentinel.agent.score_fit.agent import invoke
 from jobsentinel.db.agent_runs import KIND_SCORE_FIT, get_latest_run
 from jobsentinel.db.engine import get_engine
 from jobsentinel.db.jobs import get_job
-from jobsentinel.db.models import ToolCall
+from jobsentinel.db.models import Job, ToolCall
 
-FIXTURE_JOB_IDS = [422, 427, 1, 484, 176]
+FIXTURES = [
+    ("greenhouse", "5174743008"),  # Anthropic - Senior Software Engineer, Full-stack
+    ("greenhouse", "5400153008"),  # Anthropic - Software Engineer, Business Technology
+    ("greenhouse", "4461450008"),  # Anthropic - Account Executive, AI Native
+    ("greenhouse", "5174747008"),  # Anthropic - Staff+ Software Engineer, Full-stack
+    ("greenhouse", "5391016008"),  # Anthropic - Forward Deployed Engineer
+    ("ashby", "36e69353-0452-4bf6-9f35-b1e7307959a7"),  # Cursor - Software Engineer, Generalist
+    ("lever", "a90333e6-777f-41fd-9bf5-50f5895ffde3"),  # Binance - Full Stack Engineer (Frontend Oriented)
+]
+
+
+def resolve_job_id(engine, source: str, ats_job_id: str) -> int | None:
+    """Today's internal id for a fixture, or None if it's not loaded
+    (delisted, or the board hasn't been loaded on this database)."""
+    with engine.connect() as conn:
+        return conn.execute(
+            select(Job.id).where(Job.source == source, Job.ats_job_id == ats_job_id)
+        ).scalar_one_or_none()
 
 
 def get_tool_calls(engine, run_id: int) -> list[dict]:
@@ -121,9 +143,13 @@ def main() -> int:
     engine = get_engine()
     results = []
 
-    for job_id in FIXTURE_JOB_IDS:
+    for source, ats_job_id in FIXTURES:
+        job_id = resolve_job_id(engine, source, ats_job_id)
+        if job_id is None:
+            print(f"skipping {source}/{ats_job_id}: not loaded on this database")
+            continue
         job = get_job(engine, job_id)
-        title = job["title"] if job else f"(job {job_id} not found)"
+        title = f"{job['company']} - {job['title']}"
         print(f"scoring [{job_id}] {title!r}...")
 
         payload = {"job_id": job_id, "user_id": args.user_id}

@@ -24,10 +24,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     """Shared declarative base for every ORM model in this project."""
+    # Passing naming_convention *replaces* SQLAlchemy's default one, which
+    # was {"ix": "ix_%(column_0_label)s"} - so "ix" has to be restated or
+    # every index=True column (e.g. profiles.user_id) loses its name and
+    # autogenerate starts proposing drop/re-create of existing indexes.
     metadata = MetaData(naming_convention={
+        "ix": "ix_%(column_0_label)s",
         "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
         "uq": "uq_%(table_name)s_%(column_0_name)s",
-        # ix / ck / pk too
     })
 
 class Job(Base):
@@ -62,8 +66,19 @@ class Job(Base):
     # The full, untouched API response for this posting. JSONB (not JSON)
     # so Postgres can index/query into it efficiently later - kept in full
     raw_json: Mapped[dict] = mapped_column(JSONB)
-    # When *we* pulled this posting - not when the ATS published it.
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # When the ATS says the posting went live (Greenhouse first_published,
+    # Ashby publishedAt, Lever createdAt). Nullable: an ATS isn't obliged
+    # to send one, and a missing date shouldn't drop the whole posting.
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Display string as the ATS words it ("San Francisco, CA | New York City, NY").
+    # Kept as text, not normalized - each ATS formats it differently, and
+    # structured location filtering is Slice 9's problem to design.
+    location: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "remote" | "hybrid" | "onsite", or NULL when the ATS doesn't say.
+    workplace_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When *we* last pulled this posting - not when the ATS published it.
+    # Overwritten on every load; Stage 4's delisting relies on it.
+    last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 class Profile(Base):
     """A structured profile snapshot (jobsentinel.extraction.schema.ExtractedProfile,
@@ -199,3 +214,35 @@ class Company(Base):
     # slug/ board_token
     board_token: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class UserCompany(Base):
+    """One row per (user, followed company) - a junction table for the
+    many-to-many between Clerk users and `companies`.
+
+    Following = INSERT, unfollowing = DELETE. Nothing is updated in place,
+    so like Profile there's only `created_at`, no `updated_at`.
+    """
+    __tablename__ = "user_companies"
+    # Composite primary key: (user_id, company_id) together identify a row,
+    # so the same user can't follow the same company twice - the DB rejects
+    # it, no app-side dedupe needed. Column order matters: the PK's backing
+    # B-tree index leads with user_id, so "which companies does user X
+    # follow?" (the hot path - every feed request) is already indexed.
+    #
+    # Clerk user ID (JWT `sub`), same as profiles.user_id. Text, no FK -
+    # there's no users table; Clerk owns user identity.
+    user_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    # ON DELETE CASCADE: if a company is removed from `companies`, its
+    # follows go with it rather than blocking the delete or dangling.
+    # index=True covers the reverse lookup the PK index can't: "who follows
+    # company Y?" (the poller notifying followers of new postings), since a
+    # composite index is only usable when filtering on its leading column.
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    # When the follow happened - useful for ordering "your companies" and
+    # for "new since you followed" logic in the feed.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    

@@ -13,6 +13,15 @@ export function AppLayout() {
           </Link>
 
           <NavLink
+            to="/companies"
+            className={({ isActive }) =>
+              isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }
+          >
+            Companies
+          </NavLink>
+
+          <NavLink
             to="/jobs"
             className={({ isActive }) =>
               isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'

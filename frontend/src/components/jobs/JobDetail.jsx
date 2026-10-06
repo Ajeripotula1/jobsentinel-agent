@@ -102,9 +102,19 @@ export const JobDetail = ({ jobId }) => {
                 >
                     {job.title}
                 </h1>
-                <Badge variant="secondary">{job.board_token}</Badge>
+                <Badge variant="secondary">{job.company}</Badge>
+                {job.location && (
+                    // Multi-location postings can be long - capped and
+                    // truncated, full text in the tooltip.
+                    <span title={job.location} className="max-w-64 shrink-0 truncate text-sm text-muted-foreground">
+                        {job.location}
+                    </span>
+                )}
+                {job.workplace_type && (
+                    <Badge variant="outline" className="capitalize">{job.workplace_type}</Badge>
+                )}
                 <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
-                    Fetched {formatDate(job.fetched_at)}
+                    Posted {formatDate(job.posted_at)}
                 </span>
                 {job.url && (
                     <Button

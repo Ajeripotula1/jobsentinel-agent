@@ -54,9 +54,13 @@ def test_list_all_jobs_returns_summaries(monkeypatch):
         "id": 182,
         "title": "Full-Stack Software Engineer, RL",
         "source": "greenhouse",
-        "board_token": "anthropic",
+        "company_id": 1,
+        "company": "Anthropic",
         "url": "https://example.com/182",
-        "fetched_at": "2026-01-01T00:00:00Z",
+        "posted_at": "2025-12-15T00:00:00Z",
+        "location": "San Francisco, CA",
+        "workplace_type": None,
+        "last_synced_at": "2026-01-01T00:00:00Z",
     }
     monkeypatch.setattr(
         "jobsentinel.api.routers.jobs.list_jobs", lambda engine: [fake_job]
@@ -83,8 +87,14 @@ def test_read_job_returns_detail(monkeypatch):
         "source": "greenhouse",
         "board_token": "anthropic",
         "url": "https://example.com/182",
+        "company_id": 1,
+        "company": "Anthropic",
         "raw_json": {"anything": "here"},
-        "fetched_at": "2026-01-01T00:00:00Z",
+        # No publish date from the ATS - must still serialize, as null.
+        "posted_at": None,
+        "location": None,
+        "workplace_type": None,
+        "last_synced_at": "2026-01-01T00:00:00Z",
     }
     monkeypatch.setattr(
         "jobsentinel.api.routers.jobs.get_job", lambda engine, job_id: fake_job
@@ -93,7 +103,12 @@ def test_read_job_returns_detail(monkeypatch):
     response = client.get("/jobs/182")
 
     assert response.status_code == 200
-    assert response.json()["description"] == "Full posting text..."
+    body = response.json()
+    assert body["description"] == "Full posting text..."
+    assert body["company"] == "Anthropic"
+    assert body["posted_at"] is None
+    # raw_json is internal - never part of the API response.
+    assert "raw_json" not in body
 
 
 def test_read_job_404s_when_missing(monkeypatch):

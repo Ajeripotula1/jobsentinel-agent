@@ -9,17 +9,15 @@ rules: the API and the agent both reach Postgres through modules like this
 one, never through each other.
 """
 
-from datetime import datetime
-
 from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from jobsentinel.db.models import Job
+from jobsentinel.db.models import Company, Job
 
 
-# Postgres caps one statement at 65,535 bind parameters. 8 columns per row
-# puts the ceiling around 8,000 rows; 1,000 per statement stays well under
+# Postgres caps one statement at 65,535 bind parameters. 13 columns per row
+# puts the ceiling around 5,000 rows; 1,000 per statement stays well under
 # it, and still means a typical board is one or two round-trips, not hundreds.
 _UPSERT_CHUNK_SIZE = 1000
 
@@ -65,9 +63,10 @@ def upsert_jobs(engine: Engine, company_id: int, jobs: list[dict]) -> int:
             "description": job["description"],
             "url": job["url"],
             "raw_json": job["raw_json"],
-            # Arrives as an ISO 8601 string (that's what normalized_job
-            # produces); psycopg needs a real datetime for a timestamptz.
-            "fetched_at": datetime.fromisoformat(job["fetched_at"]),
+            "posted_at": job["posted_at"],
+            "location": job["location"],
+            "workplace_type": job["workplace_type"],
+            "last_synced_at": job["last_synced_at"],
         }
         for job in jobs
     }
@@ -86,59 +85,73 @@ def upsert_jobs(engine: Engine, company_id: int, jobs: list[dict]) -> int:
                 index_elements=["source", "ats_job_id"],
                 set_={
                     col: stmt.excluded[col]
-                    for col in ("board_token", "company_id", "title", "description", "url", "raw_json", "fetched_at")
+                    for col in (
+                        "board_token", "company_id", "title", "description", "url", "raw_json",
+                        "posted_at", "location", "workplace_type", "last_synced_at",
+                    )
                 },
             )
             conn.execute(stmt)
     return len(rows)
 
 
-def get_job(engine: Engine, job_id: int) -> dict | None:
-    """Fetch one job by its internal `id` - NOT its ats_job_id.
+# Columns every job read returns. `company` comes from a join, not from
+# jobs itself - board_token is an ATS slug ("shieldai"), not a display name.
+_SUMMARY_COLUMNS = (
+    Job.id,
+    Job.title,
+    Job.source,
+    Job.company_id,
+    Company.name.label("company"),
+    Job.url,
+    Job.posted_at,
+    Job.location,
+    Job.workplace_type,
+    Job.last_synced_at,
+)
 
-    Returns a plain dict, not the live `Job` ORM object, on purpose: the
-    object is tied to the Session opened in this function, which is closed
-    before we return. Handing back the object itself would risk the
-    classic ORM DetachedInstanceError the moment a caller - including the
-    agent's `get_job` tool in Slice 3 - touches an attribute after that
-    session is gone. A plain dict has no such lifetime to worry about.
+
+def get_job(engine: Engine, job_id: int) -> dict | None:
+    """Fetch one job by its internal `id` - NOT its ats_job_id - joined to
+    its company's display name.
+
+    Returns a plain dict, not a live `Job` ORM object, on purpose: an ORM
+    object is tied to the Session it was loaded in, which is closed before
+    we return. Handing it back would risk the classic DetachedInstanceError
+    the moment a caller - including the agents' `get_job_info` tools -
+    touches an attribute after that session is gone. A plain row mapping
+    has no such lifetime to worry about.
     """
+    stmt = (
+        select(*_SUMMARY_COLUMNS, Job.ats_job_id, Job.board_token, Job.description, Job.raw_json)
+        .join(Company, Job.company_id == Company.id)
+        .where(Job.id == job_id)
+    )
     with Session(engine) as session:
-        job = session.get(Job, job_id)
-        if job is None:
-            return None
-        return {
-            "id": job.id,
-            "ats_job_id": job.ats_job_id,
-            "source": job.source,
-            "board_token": job.board_token,
-            "title": job.title,
-            "description": job.description,
-            "url": job.url,
-            "raw_json": job.raw_json,
-            "fetched_at": job.fetched_at,
-        }
+        row = session.execute(stmt).one_or_none()
+        return dict(row._mapping) if row else None
 
 
 def list_jobs(engine: Engine) -> list[dict]:
-    """Every job, ordered by internal id, projected to summary fields only.
+    """Every job, newest posting first, projected to summary fields only.
 
     Deliberately excludes `description`/`raw_json` - those are large text
     blobs only needed on the single-job detail view (get_job above), and
-    including them here would make a ~600-row response unnecessarily big.
+    including them here would make a ~7,000-row response many MB.
 
-    No pagination or filtering params: today's only loaded board fits
-    comfortably in one response as summaries, and positions.py-based
-    filtering (or scoping by followed company) is real future job-feed
-    work, not something to build ahead of an actual need.
+    One query with a join for the company name, not a lookup per job.
+    NULLS LAST so postings without a publish date sink to the bottom
+    instead of Postgres's default (NULLs first under DESC); `id` breaks
+    ties so the order is stable between requests.
+
+    No pagination or filtering params yet - per BUILD_PLAN Slice 8 the
+    row count is now big enough that this is Slice 9's job (a per-user,
+    server-filtered feed), not something to bolt on here.
     """
-    stmt = select(
-        Job.id,
-        Job.title,
-        Job.source,
-        Job.board_token,
-        Job.url,
-        Job.fetched_at,
-    ).order_by(Job.id)
+    stmt = (
+        select(*_SUMMARY_COLUMNS)
+        .join(Company, Job.company_id == Company.id)
+        .order_by(Job.posted_at.desc().nulls_last(), Job.id)
+    )
     with Session(engine) as session:
         return [dict(row._mapping) for row in session.execute(stmt)]

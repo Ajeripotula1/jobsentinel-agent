@@ -40,3 +40,6 @@ node_modules/
 .bedrock_agentcore.yaml
 .bedrock_agentcore/
 .dockerignore
+
+# scratch and exploration scripts 
+.scratch/
