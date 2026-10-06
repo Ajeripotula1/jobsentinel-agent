@@ -4,6 +4,7 @@ import { useJobs } from '@/hooks/useJobs'
 import { useCompanies } from '@/hooks/useCompanies'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { SourceBadge } from '../SourceBadge'
 import { Skeleton } from '@/components/ui/skeleton'
 // import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import ErrorAlert from '@/components/ErrorAlert'
@@ -116,7 +117,7 @@ export const JobsTable = () => {
               </TableCell>
               <TableCell>{job.company}</TableCell>
               <TableCell>
-                <Badge variant="outline">{job.source}</Badge>
+                <SourceBadge source={job.source}/>
               </TableCell>
               <TableCell className="text-muted-foreground">{formatDate(job.posted_at)}</TableCell>
             </TableRow>

@@ -18,6 +18,13 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // ATS Board Specific Styles 
+        emerald:
+          "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200",
+        violet:
+          "bg-violet-100 text-violet-900 dark:bg-violet-900/40 dark:text-violet-200",
+        slate: 
+          "bg-slate-200 text-slate-900 dark:bg-slate-800 dark:text-slate-200"
       },
     },
     defaultVariants: {
