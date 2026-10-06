@@ -43,3 +43,6 @@ node_modules/
 
 # scratch and exploration scripts 
 .scratch/
+scratch/
+scratch.md
+dated-README.md
