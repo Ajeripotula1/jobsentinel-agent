@@ -278,9 +278,9 @@ Goal: a signed-in user follows companies, says which roles they want, and gets a
 ### Target site map (after 9d)
 
 ```
-/                     HomePage            [CHG]  signed-in users go to /feed (9d)
+/                     HomePage            [CHG]  hero stays; CTA is My jobs signed in, Browse companies signed out (9d)
 /sign-in, /sign-up    Clerk               [SAME]
-/feed                 MyJobsPage          [NEW]  auth; the signed-in default (9b)
+/feed                 MyJobsPage          [NEW]  public preview signed out; the signed-in default (9b)
 /jobs                 JobListPage         [SAME] public all-jobs list, still reachable
 /jobs/:jobId          JobDetailPage       [SAME]
 /companies            CompaniesPage       [NEW]  public to browse, auth to follow (9a)
@@ -290,14 +290,14 @@ Goal: a signed-in user follows companies, says which roles they want, and gets a
 ```
 Navbar, signed out:
 +--------------------------------------------------------------------------+
-| JobSentinel   All jobs   Companies                    [Sign in] [Sign up] |
+| JobSentinel   Companies   My jobs   All jobs          [Sign in] [Sign up] |
 +--------------------------------------------------------------------------+
 
 Navbar, signed in:
 +--------------------------------------------------------------------------+
-| JobSentinel   My jobs   All jobs   Companies   Profile             (o)   |
+| JobSentinel   Companies   My jobs   All jobs   Profile             (o)   |
 +--------------------------------------------------------------------------+
-               (9b)                  (9a)                        UserButton
+                  (9a)       (9b)                                UserButton
 ```
 
 ---
@@ -347,10 +347,10 @@ Navbar, signed in:
    data: GET /jobs/feed (server filters to followed companies)
 ```
 
-- [ ] DB access: `list_feed_jobs(user_id)` — `jobs` joined to `user_companies` on the user, same ordering as `list_jobs` (`posted_at DESC NULLS LAST, id`)
-- [ ] API: `GET /jobs/feed` (auth) returning `JobSummary` rows. **Decide the response shape now** **(design exercise):** a bare list, or an envelope like `{jobs, followed_count, has_roles}` so 9d's empty states don't need three separate queries. Changing it later means changing every consumer, so pick before 9c
-- [ ] Frontend: refactor `JobsTable` to take its jobs (and loading/error state) as props, not call `useJobs()` itself, so `/jobs` and `/feed` share one table. `useFeed` hook; `MyJobsPage` with `FeedSummaryBar` ([Edit companies] → `/companies`); "My jobs" navbar link (signed in only)
-- [ ] **Verify in browser:** `/feed` shows only followed companies' jobs; follow a new company on `/companies`, go back, its jobs appear (check your query invalidation); `/jobs` still shows everything
+- [x] DB access: `list_feed_jobs(user_id)` — `jobs` joined to `user_companies` on the user, same ordering as `list_jobs` (`posted_at DESC NULLS LAST, id`). **Done** in `db/jobs.py`: an INNER JOIN on `user_companies` (company + user), so following nothing returns `[]` with no special case
+- [x] API: `GET /jobs/feed` (auth) returning `JobSummary` rows. **Decide the response shape now** **(design exercise):** a bare list, or an envelope like `{jobs, followed_count, has_roles}` so 9d's empty states don't need three separate queries. Changing it later means changing every consumer, so pick before 9c. **Done:** envelope `JobFeed {jobs, followed_count}`; 9c adds `has_roles`. Route is registered before `/jobs/{job_id}` so `feed` isn't parsed as an id
+- [x] Frontend: refactor `JobsTable` to take its jobs (and loading/error state) as props, not call `useJobs()` itself, so `/jobs` and `/feed` share one table. `useFeed` hook; `MyJobsPage` with `FeedSummaryBar` ([Edit companies] → `/companies`); "My jobs" navbar link (signed in only). **Done:** `JobsTable` takes `jobs`/`isPending`/`isError`/`error`/`emptyMessage` as props, and its company dropdown is now built from the jobs it's given (so on `/feed` it lists followed companies only). `useFeedJobs` is keyed `feedJobs(userId)` with `enabled: !!userId`. Follow/unfollow invalidate the feed as well as the followed-companies list. **Changed from plan (2026-10-12):** `/feed` and its navbar link are public. Signed out, the page shows an empty preview with a sign-in message (no buttons; the navbar has them) and fetches nothing, so visitors can see the feature. The empty state uses `followed_count` to tell "following nothing" apart from "no openings"
+- [ ] **Verify in browser:** signed out, `/feed` shows the empty preview with a sign-in message and makes no `/jobs/feed` request; `/feed` shows only followed companies' jobs; follow a new company on `/companies`, go back, its jobs appear (check your query invalidation); `/jobs` still shows everything
 
 ### 9c — Target roles (filter the feed)
 
@@ -385,10 +385,15 @@ Navbar, signed in:
 
 ### 9d — Empty states, landing, and the onboarding walk
 
+**Flow decision (2026-10-12):**
+- **Nav order is Companies · My jobs · All jobs · Profile**, signed in and out. Read left to right, it tells the product's story: pick companies, see their jobs, browse everything else. My jobs is shown signed out as a preview page.
+- **Onboarding asks for follows first, resume last.** The feed works without a resume, which is only needed for Score Fit and the Job Agent. So the first ask is the one-click step (follow), and the costly step (upload a PDF) comes when the user actually tries to score a job.
+- **The HomePage hero stays for signed-in users (no redirect).** Its main button is My jobs, so returning users are one click from their feed.
+- **Done:** the nav reorder and the HomePage CTAs.
+
 ```
 /feed — <FeedEmptyState/>: only ONE shows, checked in this order
 +--------------------------------------------------------------------------+
-|  - no resume       -> "Upload your resume to score jobs"   [Upload]      |  (existing alert)
 |  - no follows      -> "Follow some companies to build your feed"         |
 |                                                   [Browse companies]     |
 |  - no roles picked -> "Pick the roles you're looking for"  [Pick roles]  |
@@ -398,17 +403,14 @@ Navbar, signed in:
 
 ```
 New user:
- HomePage --[Get started]--> /sign-up (Clerk)
-                                 |
-                                 v
-                              /feed  --(no resume)--> [Upload]
-                                                         |
-       +-------------------------------------------------+
+ HomePage --[Get started]--> /sign-up (Clerk) --> HomePage --[My jobs]
+                                                                  |
+                                                                  v
+                              /feed  --(no follows)--> [Browse companies]
+                                                                  |
+       +----------------------------------------------------------+
        v
-  /profile (Resume tab) --upload PDF--> ProfileView --"Next: follow companies"
-       |
-       v
-  /companies --follow 3-5--> [Done → see my jobs]
+  /companies --follow 3-5--> [See my jobs]
        |
        v
   /feed --(no roles)--> [Pick roles]
@@ -417,23 +419,31 @@ New user:
   /profile (Job preferences tab) --save--> back to /feed
        |
        v
-  /feed (populated) --click row--> /jobs/:id --> Score Fit --> Job Agent
+  /feed (populated) --click row--> /jobs/:id --> Score Fit
+       |                                            |
+       |                          (no resume) --> [Upload resume]
+       |                                            |
+       |                                            v
+       |                          /profile (Resume tab) --upload--> back to the job
+       v
+  Score Fit --> Job Agent
 
 Returning user:
- sign in --> /feed --> click job --> /jobs/:id --> Score / Agent
+ sign in --> HomePage --[My jobs]--> /feed --> click job --> /jobs/:id --> Score / Agent
                |  [Edit companies] --> /companies --> back to /feed
                |  [Edit roles]     --> /profile (Job preferences) --> back to /feed
                +-- navbar "All jobs" --> /jobs
 
 Signed out:
- HomePage --[Browse jobs]--> /jobs --click--> /jobs/:id (Score Fit asks to sign in)
-          \--> /companies --[+ Follow]--> /sign-in
+ HomePage --[Browse companies]--> /companies --[+ Follow]--> /sign-in
+          \--> navbar "My jobs" --> /feed preview (sign-in message, empty table)
+          \--> navbar "All jobs" --> /jobs --click--> /jobs/:id (Score Fit asks to sign in)
 ```
 
-- [ ] Frontend: `FeedEmptyState` with the four cases above, in that order
-- [ ] Frontend: "next step" links that connect the onboarding path: ProfileView → `/companies`, CompaniesPage [Done → see my jobs] → `/feed`, preferences save → `/feed`
-- [ ] Frontend: signed-in landing. `/` redirects to `/feed` (or the HomePage CTA becomes "Go to my jobs"; pick one), and Clerk's post-sign-in redirect lands on `/feed`
-- [ ] **Verify in browser:** walk the full new-user path with a fresh Clerk account (sign up → upload resume → follow companies → pick roles → feed → score a job), hitting each empty state along the way. Then the returning-user path, then signed out
+- [ ] Frontend: `FeedEmptyState` with the three cases above, in that order. "No resume" is not a feed empty state: the existing non-blocking alert stays, and Score Fit is where the resume is actually required
+- [ ] Frontend: "next step" links that connect the onboarding path: CompaniesPage [See my jobs] → `/feed` once ≥1 company is followed, preferences save → `/feed`, resume upload started from a job's Score Fit → back to that job
+- [x] Frontend: signed-in landing. **Decided (2026-10-12):** no redirect; the HomePage hero stays and its main button is My jobs (signed out: Browse companies + Get started). Clerk's post-sign-in redirect keeps landing on `/`
+- [ ] **Verify in browser:** walk the full new-user path with a fresh Clerk account (sign up → My jobs → follow companies → pick roles → feed → score a job → upload resume when asked), hitting each empty state along the way. Then the returning-user path, then signed out
 
 # Stage 4 — Polling
 

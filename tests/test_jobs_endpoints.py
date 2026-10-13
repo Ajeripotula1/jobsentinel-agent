@@ -75,6 +75,61 @@ def test_list_all_jobs_returns_summaries(monkeypatch):
     assert "description" not in body[0]
 
 
+# ---- GET /jobs/feed -------------------------------------------------------
+
+
+def test_feed_returns_envelope_scoped_to_current_user(monkeypatch):
+    fake_job = {
+        "id": 182,
+        "title": "Full-Stack Software Engineer, RL",
+        "source": "greenhouse",
+        "company_id": 1,
+        "company": "Anthropic",
+        "url": "https://example.com/182",
+        "posted_at": "2025-12-15T00:00:00Z",
+        "location": "San Francisco, CA",
+        "workplace_type": None,
+        "last_synced_at": "2026-01-01T00:00:00Z",
+    }
+    seen_users = []
+
+    def fake_feed(engine, user_id):
+        seen_users.append(user_id)
+        return [fake_job]
+
+    monkeypatch.setattr("jobsentinel.api.routers.jobs.list_feed_jobs", fake_feed)
+    monkeypatch.setattr(
+        "jobsentinel.api.routers.jobs.list_followed_company_ids", lambda engine, user_id: {1, 2}
+    )
+
+    response = client.get("/jobs/feed")
+
+    assert response.status_code == 200
+    assert response.json() == {"jobs": [fake_job], "followed_count": 2}
+    assert seen_users == [TEST_USER_ID]
+
+
+def test_feed_following_nothing_is_empty_not_404(monkeypatch):
+    monkeypatch.setattr("jobsentinel.api.routers.jobs.list_feed_jobs", lambda engine, user_id: [])
+    monkeypatch.setattr(
+        "jobsentinel.api.routers.jobs.list_followed_company_ids", lambda engine, user_id: set()
+    )
+
+    response = client.get("/jobs/feed")
+
+    assert response.status_code == 200
+    assert response.json() == {"jobs": [], "followed_count": 0}
+
+
+def test_feed_requires_auth():
+    del app.dependency_overrides[get_current_user_id]
+    try:
+        response = client.get("/jobs/feed")
+    finally:
+        app.dependency_overrides[get_current_user_id] = lambda: TEST_USER_ID
+    assert response.status_code in (401, 403)
+
+
 # ---- GET /jobs/{id} -------------------------------------------------------
 
 

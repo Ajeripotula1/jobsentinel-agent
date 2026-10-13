@@ -8,6 +8,7 @@ export const queryKeys = {
     profile: ['profile'], // only show user their own (singular profile)
     score: (id) => ['score', id], // score against SPECIFIC job id
     agent: (id) => ['agent', id], // scope agent interactions to specific job id
-    followedCompanies: (id) => ['follow', 'companies', id] // scope followed companies to specific user
+    followedCompanies: (id) => ['follow', 'companies', id], // scope followed companies to specific user
+    feedJobs: (id) => ['feed', id] // scope jobs in feed to specific user
 
 }

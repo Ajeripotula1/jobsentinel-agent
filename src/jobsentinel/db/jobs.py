@@ -13,7 +13,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from jobsentinel.db.models import Company, Job
+from jobsentinel.db.models import Company, Job, UserCompany
 
 
 # Postgres caps one statement at 65,535 bind parameters. 13 columns per row
@@ -151,6 +151,37 @@ def list_jobs(engine: Engine) -> list[dict]:
     stmt = (
         select(*_SUMMARY_COLUMNS)
         .join(Company, Job.company_id == Company.id)
+        .order_by(Job.posted_at.desc().nulls_last(), Job.id)
+    )
+    with Session(engine) as session:
+        return [dict(row._mapping) for row in session.execute(stmt)]
+
+
+def list_feed_jobs(engine: Engine, user_id: str) -> list[dict]:
+    """Every job from a company `user_id` follows - BUILD_PLAN Slice 9b's
+    "My jobs" feed. Same summary columns and ordering as list_jobs, so the
+    frontend renders both with one table.
+
+    The filter is an INNER JOIN to user_companies on (company_id, this
+    user), not "fetch followed ids, then WHERE company_id IN (...)": one
+    round-trip, and Postgres plans it as a lookup on the user_companies PK
+    (user_id leads it) followed by ix_jobs_company_id for each followed
+    company - the index 9a added for exactly this join. An inner join also
+    means a user who follows nothing gets [] for free.
+
+    Filtering happens here, server-side, rather than shipping all ~7,000
+    jobs and filtering in the browser - the point of this slice (see
+    list_jobs's note on payload size). Still no pagination: a feed is
+    bounded by how many companies one person follows. Revisit if that
+    stops being true.
+    """
+    stmt = (
+        select(*_SUMMARY_COLUMNS)
+        .join(Company, Job.company_id == Company.id)
+        .join(
+            UserCompany,
+            (UserCompany.company_id == Job.company_id) & (UserCompany.user_id == user_id),
+        )
         .order_by(Job.posted_at.desc().nulls_last(), Job.id)
     )
     with Session(engine) as session:

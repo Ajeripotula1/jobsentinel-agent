@@ -8,6 +8,7 @@ import { JobDetailPage } from './pages/JobDetailPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { CompaniesPage } from './pages/CompaniesPage'
+import { MyJobsPage } from './pages/MyJobsPage'
 
 function App() {
   return (
@@ -33,8 +34,10 @@ function App() {
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
         <Route path="companies" element={<CompaniesPage />} />
-
         <Route path="jobs" element={<JobListPage />} />
+        {/* Public on purpose: signed out, it renders as an empty preview
+            with sign-in prompts (see MyJobsPage) instead of redirecting. */}
+        <Route path="feed" element={<MyJobsPage />} />
         <Route path="jobs/:jobId" element={<JobDetailPage />} />
         <Route
           path="profile"

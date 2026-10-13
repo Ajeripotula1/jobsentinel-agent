@@ -12,6 +12,9 @@ export function AppLayout() {
             JobSentinel
           </Link>
 
+          {/* Order tells the product's story, left to right: pick your
+              companies -> see their jobs -> browse everything else. Same
+              order signed in and out; signed out, My jobs is a preview. */}
           <NavLink
             to="/companies"
             className={({ isActive }) =>
@@ -22,12 +25,21 @@ export function AppLayout() {
           </NavLink>
 
           <NavLink
+            to="/feed"
+            className={({ isActive }) =>
+              isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }
+          >
+            My jobs
+          </NavLink>
+
+          <NavLink
             to="/jobs"
             className={({ isActive }) =>
               isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
             }
           >
-            Jobs
+            All jobs
           </NavLink>
 
           <NavLink

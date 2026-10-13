@@ -24,8 +24,9 @@ from jobsentinel.api.auth import get_current_user_id
 from jobsentinel.agent.shared.schema import FitAssessment
 from jobsentinel.db.agent_runs import KIND_SCORE_FIT, get_latest_successful_result
 from jobsentinel.db.engine import get_engine
-from jobsentinel.db.jobs import get_job, list_jobs
+from jobsentinel.db.jobs import get_job, list_feed_jobs, list_jobs
 from jobsentinel.db.profile import get_latest_profile, get_profile
+from jobsentinel.db.user_companies import list_followed_company_ids
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -62,6 +63,15 @@ class JobSummary(BaseModel):
     last_synced_at: datetime
 
 
+class JobFeed(BaseModel):
+    """GET /jobs/feed's response: an envelope, not a bare list, so the
+    feed page can tell "you follow nothing yet" apart from "your companies
+    have no openings" without a second request. 9c adds `has_roles` here
+    for the same reason (see BUILD_PLAN 9b/9d's empty states)."""
+    jobs: list[JobSummary]
+    followed_count: int
+
+
 class JobDetail(JobSummary):
     ats_job_id: str
     board_token: str
@@ -85,6 +95,20 @@ def list_all_jobs() -> list[JobSummary]:
     db.jobs.list_jobs's docstring for why there's no pagination/filtering
     yet."""
     return [JobSummary(**job) for job in list_jobs(get_engine())]
+
+
+# Must be registered before /{job_id}: FastAPI matches routes in order, and
+# "/jobs/feed" would otherwise hit read_job and 422 on int("feed").
+@router.get("/feed", response_model=JobFeed)
+def read_feed(current_user_id: str = Depends(get_current_user_id)) -> JobFeed:
+    """The signed-in user's feed: jobs from companies they follow, newest
+    first - see db.jobs.list_feed_jobs. A user following nothing gets
+    `{"jobs": [], "followed_count": 0}`, not a 404: that's a normal state."""
+    engine = get_engine()
+    return JobFeed(
+        jobs=[JobSummary(**job) for job in list_feed_jobs(engine, current_user_id)],
+        followed_count=len(list_followed_company_ids(engine, current_user_id)),
+    )
 
 
 @router.get("/{job_id}", response_model=JobDetail)

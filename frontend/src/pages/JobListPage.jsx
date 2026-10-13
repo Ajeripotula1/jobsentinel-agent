@@ -2,6 +2,7 @@ import { JobsTable } from "@/components/jobs/JobsTable"
 import { Alert, AlertTitle, AlertAction } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { useProfile } from "@/hooks/useProfile"
+import { useJobs } from "@/hooks/useJobs"
 import { useAuth } from "@clerk/clerk-react"
 import { Link } from "react-router-dom"
 import { Loader2 } from "lucide-react"
@@ -11,9 +12,12 @@ export function JobListPage() {
   // token to fetch with yet, and nothing to show a "no profile" banner
   // for until we actually know who's signed in.
   const { data: profile, isPending } = useProfile({ enabled: isSignedIn })
+  const jobsQuery = useJobs()
 
   return (
     <div className="space-y-4">
+      <h1 className="text-2xl font-semibold">All jobs</h1>
+
       {/* Gated on isSignedIn too, not just isPending: useProfile is
           `enabled: isSignedIn`, and a disabled query never leaves React
           Query's "pending" status since it never actually runs - without
@@ -48,7 +52,12 @@ export function JobListPage() {
         </Alert>
       )}
 
-      <JobsTable />
+      <JobsTable
+        jobs={jobsQuery.data}
+        isPending={jobsQuery.isPending}
+        isError={jobsQuery.isError}
+        error={jobsQuery.error}
+      />
     </div>
   )
 }

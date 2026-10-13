@@ -1,9 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useJobs } from '@/hooks/useJobs'
-import { useCompanies } from '@/hooks/useCompanies'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { SourceBadge } from '../SourceBadge'
 import { Skeleton } from '@/components/ui/skeleton'
 // import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
@@ -18,9 +15,21 @@ import {
 } from '@/components/ui/table'
 import { formatDate } from '@/lib/format'
 
-export const JobsTable = () => {
-  const { data: jobs, isPending, isError, error } = useJobs()
-  const { data: companies } = useCompanies()
+// Presentational: the page decides *which* jobs to show (all jobs on /jobs,
+// the user's feed on /feed) and passes them in along with the query state;
+// this component only renders and filters what it's given. Search/company
+// filter state stays local here - neither page needs to read it, and each
+// mounted table gets its own copy.
+//
+// `emptyMessage` is shown when `jobs` itself is empty (as opposed to the
+// filters matching nothing), so each page can explain its own empty case.
+export const JobsTable = ({
+  jobs,
+  isPending,
+  isError,
+  error,
+  emptyMessage = 'No jobs loaded yet.',
+}) => {
   const [filter, setFilter] = useState('')
   // '' = all companies; otherwise a company id as a string (a <select>'s
   // value is always a string - compared against String(job.company_id)).
@@ -38,21 +47,25 @@ export const JobsTable = () => {
     )
   }, [jobs, filter, companyId])
 
-  const sortedCompanies = useMemo(
-    () => (companies ? [...companies].sort((a, b) => a.name.localeCompare(b.name)) : []),
-    [companies]
-  )
+  // Dropdown options come from the jobs we were given, not GET /companies:
+  // on /feed that automatically means followed companies only, and it never
+  // offers a company that would filter the table down to zero rows.
+  const companyOptions = useMemo(() => {
+    if (!jobs) return []
+    const byId = new Map()
+    for (const job of jobs) byId.set(job.company_id, job.company)
+    return [...byId]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [jobs])
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">Jobs</h1>
-        {jobs && (
-          <p className="text-sm text-muted-foreground">
-            Showing {filteredJobs.length} of {jobs.length} jobs
-          </p>
-        )}
-      </div>
+      {jobs && (
+        <p className="text-sm text-muted-foreground">
+          Showing {filteredJobs.length} of {jobs.length} jobs
+        </p>
+      )}
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
@@ -71,7 +84,7 @@ export const JobsTable = () => {
           className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30 sm:w-56"
         >
           <option value="">All companies</option>
-          {sortedCompanies.map((company) => (
+          {companyOptions.map((company) => (
             <option key={company.id} value={String(company.id)}>
               {company.name}
             </option>
@@ -103,7 +116,7 @@ export const JobsTable = () => {
           {!isPending && !isError && filteredJobs.length === 0 && (
             <TableRow>
               <TableCell colSpan={4} className="text-center text-muted-foreground">
-                {jobs && jobs.length === 0 ? 'No jobs loaded yet.' : 'No jobs match these filters.'}
+                {jobs && jobs.length === 0 ? emptyMessage : 'No jobs match these filters.'}
               </TableCell>
             </TableRow>
           )}

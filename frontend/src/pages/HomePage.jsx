@@ -13,16 +13,23 @@ export function HomePage() {
         and helps you tailor a resume and cover letter for it — grounded only in what you've
         actually told it, never invented.
       </p>
+      {/* The first step differs by auth state. Visitors start where the
+          flow starts - seeing which companies are covered. Signed-in users
+          go straight to their feed, which is also how a returning user gets
+          there in one click (My jobs is the second nav tab, not the first). */}
       <div className="mt-8 flex justify-center gap-3">
-        <Link to="/jobs" className={buttonVariants({ size: 'lg' })}>
-          Browse jobs
-        </Link>
         <SignedOut>
+          <Link to="/companies" className={buttonVariants({ size: 'lg' })}>
+            Browse companies
+          </Link>
           <Link to="/sign-up" className={buttonVariants({ variant: 'outline', size: 'lg' })}>
             Get started
           </Link>
         </SignedOut>
         <SignedIn>
+          <Link to="/feed" className={buttonVariants({ size: 'lg' })}>
+            My jobs
+          </Link>
           <Link to="/profile" className={buttonVariants({ variant: 'outline', size: 'lg' })}>
             Upload your resume
           </Link>

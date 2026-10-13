@@ -39,10 +39,16 @@ export const useFollowedCompanies = () => {
 // The UI briefly shows the old state until that refetch lands; if that lag
 // becomes noticeable, the upgrade is an optimistic update (onMutate).
 
+// Also invalidates the feed: which companies you follow decides which jobs
+// GET /jobs/feed returns, so a follow left alone would show a stale feed
+// until its staleTime ran out.
 const useInvalidateFollowed = () => {
     const queryClient = useQueryClient()
     const { userId } = useAuth()
-    return () => queryClient.invalidateQueries({ queryKey: queryKeys.followedCompanies(userId) })
+    return () => Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.followedCompanies(userId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.feedJobs(userId) }),
+    ])
 }
 
 export const useFollowCompany = () => {
